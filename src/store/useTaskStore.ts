@@ -3,12 +3,23 @@ import { create } from 'zustand';
 export type TaskType = 'bug' | 'feature' | 'tweak' | 'optimization' | 'research';
 export type TaskPriority = 'low' | 'medium' | 'high' | 'critical';
 export type TaskStatus = 'todo' | 'inProgress' | 'done';
-
+export type Author = {
+  name: string,
+    email: string,
+    role: string,
+    status: string,
+}
+export type Note = {
+    text: string; 
+    author: Author;
+    createdAt: string;
+  }
 export type Task = {
   _id: string;
   title: string;
   type: TaskType;
   priority: TaskPriority;
+  notes: Note[];
   status: TaskStatus;
   assignedTo?: { _id: string; name: string };
   createdBy?: { _id: string; name: string };

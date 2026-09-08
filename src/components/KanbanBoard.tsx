@@ -404,18 +404,18 @@ export default function KanbanBoard() {
                                   <div className="mt-4 pt-3 border-t border-neutral-800/60 flex items-center justify-between">
                                     <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-medium ${typeData.color}`}>
                                       <TypeIcon size={12} />
-                                      <span>{typeData.label}</span>
+                                      <span>{typeData?.label}</span>
                                     </div>
 
                                     <div className="flex items-center gap-2">
-                                      {task.notes && task.notes.length > 0 && (
+                                      {task.notes && task?.notes?.length > 0 && (
                                         <span className="flex items-center gap-1 text-[11px] text-neutral-400">
-                                          <MessageSquare size={12} /> {task.notes.length}
+                                          <MessageSquare size={12} /> {task?.notes?.length}
                                         </span>
                                       )}
                                       {task.createdBy && (
                                         <span className="text-[11px] text-neutral-500 font-medium">
-                                          @{task.createdBy.name.split(' ')[0]}
+                                          @{task?.createdBy?.name?.split(' ')[0]}
                                         </span>
                                       )}
                                     </div>
@@ -544,8 +544,8 @@ export default function KanbanBoard() {
                     activeTask.notes.map((note, idx) => (
                       <div key={idx} className="bg-neutral-950/40 p-3.5 rounded-xl border border-neutral-800/80 space-y-1">
                         <div className="flex justify-between items-center text-xs">
-                          <span className="font-semibold text-blue-400">@{note.author?.name || 'Desarrollador'}</span>
-                          <span className="text-[10px] text-neutral-500">{new Date(note.createdAt).toLocaleString()}</span>
+                          <span className="font-semibold text-blue-400">@{note?.author?.name || 'Desarrollador'}</span>
+                          <span className="text-[10px] text-neutral-500">{new Date(note?.createdAt).toLocaleString()}</span>
                         </div>
                         <p className="text-sm text-neutral-300 whitespace-pre-wrap">{note.text}</p>
                       </div>
