@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useSession, signOut } from 'next-auth/react';
-import { Bug, Cpu, Wrench, Zap, Search, Plus, Trash2, LogOut } from 'lucide-react';
+import Link from 'next/link';
+import { Bug, Cpu, Wrench, Zap, Search, Plus, Trash2, LogOut, Shield } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { useTaskStore, Task, TaskType, TaskPriority } from '@/store/useTaskStore';
 
@@ -166,6 +167,14 @@ export default function KanbanBoard() {
               <p className="text-neutral-400 text-sm">
                 Conectado como: <span className="text-neutral-300 font-semibold">{session?.user?.name}</span>
               </p>
+              {session?.user?.role === 'admin' && (
+                <Link 
+                  href="/admin"
+                  className="flex items-center gap-1.5 text-xs bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 px-2 py-1 rounded-md border border-purple-500/20 transition-colors"
+                >
+                  <Shield size={14} /> Panel Admin
+                </Link>
+              )}
               <button
                 onClick={() => signOut({ callbackUrl: `${window.location.origin}/login` })}
                 className="flex items-center gap-1.5 text-xs bg-red-500/10 text-red-400 hover:bg-red-500/20 px-2 py-1 rounded-md border border-red-500/20 transition-colors"

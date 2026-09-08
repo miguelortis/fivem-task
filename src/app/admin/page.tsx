@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Shield, ShieldAlert, CheckCircle, XCircle, Users } from 'lucide-react';
+import { Shield, CheckCircle, XCircle, Users } from 'lucide-react';
+import Link from 'next/link';
 
 type UserData = {
   _id: string;
@@ -67,6 +68,12 @@ export default function AdminDashboard() {
             <h1 className="text-3xl font-bold text-white">Panel de Control</h1>
             <p className="text-neutral-400 text-sm mt-1">Gestión de accesos y roles de los desarrolladores</p>
           </div>
+          <Link 
+            href="/dashboard"
+            className="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 px-4 py-2 rounded-lg transition-colors border border-neutral-700 text-sm font-medium"
+          >
+            Volver al Tablero
+          </Link>
         </header>
 
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl">
