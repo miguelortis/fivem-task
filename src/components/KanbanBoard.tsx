@@ -154,7 +154,7 @@ export default function KanbanBoard() {
                 Conectado como: <span className="text-neutral-300 font-semibold">{session?.user?.name}</span>
               </p>
               <button
-                onClick={() => signOut({ callbackUrl: '/login' })}
+                onClick={() => signOut({ callbackUrl: `${window.location.origin}/login` })}
                 className="flex items-center gap-1.5 text-xs bg-red-500/10 text-red-400 hover:bg-red-500/20 px-2 py-1 rounded-md border border-red-500/20 transition-colors"
                 title="Cerrar sesión"
               >
