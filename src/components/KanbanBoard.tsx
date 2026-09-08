@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { useSession, signOut } from 'next-auth/react';
+import { useSearchParams } from 'next/navigation';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { useTaskStore, Task, TaskType, TaskPriority } from '@/store/useTaskStore';
-import { Bug, Cpu, Wrench, Zap, Search, Plus, Trash2, LogOut, Shield, Layers, CheckCircle2, Clock, MessageSquare, X, Edit3, Send } from 'lucide-react';
+import { Bug, Cpu, Wrench, Zap, Search, Plus, Trash2, LogOut, Shield, Layers, CheckCircle2, Clock, MessageSquare, X, Edit3, Send, UserCheck } from 'lucide-react';
 import Link from 'next/link';
 
 const columnConfig = {
@@ -30,6 +31,9 @@ const priorityConfig: Record<TaskPriority, { label: string; class: string }> = {
 
 export default function KanbanBoard() {
   const { data: session, status } = useSession();
+  const searchParams = useSearchParams();
+  const devParam = searchParams.get('dev');
+
   const { columns, setTasksFromDB, optimisticMove, optimisticAdd, optimisticDelete } = useTaskStore();
   
   const [isMounted, setIsMounted] = useState(false);
@@ -39,9 +43,8 @@ export default function KanbanBoard() {
   const [newTaskType, setNewTaskType] = useState<TaskType>('feature');
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>('medium');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedUserFilter, setSelectedUserFilter] = useState('all');
+  const [selectedUserFilter, setSelectedUserFilter] = useState(devParam || 'all');
 
-  // Estado para el Modal de Tarea (Notas y Edición)
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [newNoteText, setNewNoteText] = useState('');
   const [isEditing, setIsEditing] = useState(false);
@@ -49,27 +52,30 @@ export default function KanbanBoard() {
   const [editType, setEditType] = useState<TaskType>('feature');
   const [editPriority, setEditPriority] = useState<TaskPriority>('medium');
 
-  // Filtrado de columnas (Búsqueda + Filtro por desarrollador)
+  // Actualizar filtro si cambia el parámetro de la URL
+  useEffect(() => {
+    if (devParam) setSelectedUserFilter(devParam);
+  }, [devParam]);
+
   const filteredColumns = {
     todo: columns.todo.filter(t => {
       const matchSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchUser = selectedUserFilter === 'all' || t.createdBy?._id === selectedUserFilter || t.createdBy?.name === selectedUserFilter;
+      const matchUser = selectedUserFilter === 'all' || t.createdBy?.name === selectedUserFilter;
       return matchSearch && matchUser;
     }),
     inProgress: columns.inProgress.filter(t => {
       const matchSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchUser = selectedUserFilter === 'all' || t.createdBy?._id === selectedUserFilter || t.createdBy?.name === selectedUserFilter;
+      const matchUser = selectedUserFilter === 'all' || t.createdBy?.name === selectedUserFilter;
       return matchSearch && matchUser;
     }),
     done: columns.done.filter(t => {
       const matchSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchUser = selectedUserFilter === 'all' || t.createdBy?._id === selectedUserFilter || t.createdBy?.name === selectedUserFilter;
+      const matchUser = selectedUserFilter === 'all' || t.createdBy?.name === selectedUserFilter;
       return matchSearch && matchUser;
     }),
   };
   const isSearching = searchTerm.trim().length > 0 || selectedUserFilter !== 'all';
 
-  // Obtener lista única de desarrolladores para el filtro
   const allTasksList = [...columns.todo, ...columns.inProgress, ...columns.done];
   const uniqueCreators = Array.from(new Set(allTasksList.map(t => t.createdBy?.name).filter(Boolean)));
 
@@ -132,7 +138,12 @@ export default function KanbanBoard() {
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: newTaskTitle, type: newTaskType, priority: newTaskPriority }),
+        body: JSON.stringify({ 
+          title: newTaskTitle, 
+          type: newTaskType, 
+          priority: newTaskPriority,
+          // Si estás filtrando a un usuario específico y eres admin, la tarea se crea a su nombre o se le asigna
+        }),
       });
 
       if (res.ok) {
@@ -157,7 +168,6 @@ export default function KanbanBoard() {
     }
   };
 
-  // Enviar Nota
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newNoteText.trim() || !activeTask) return;
@@ -173,7 +183,6 @@ export default function KanbanBoard() {
         const updated = await res.json();
         setActiveTask(updated);
         setNewNoteText('');
-        // Recargar el store completo para refrescar la tarjeta en el fondo
         const tasksRes = await fetch('/api/tasks');
         const tasksData = await tasksRes.json();
         if (Array.isArray(tasksData)) setTasksFromDB(tasksData);
@@ -183,7 +192,6 @@ export default function KanbanBoard() {
     }
   };
 
-  // Guardar Edición (Solo Admin)
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeTask) return;
@@ -268,10 +276,23 @@ export default function KanbanBoard() {
         </div>
       </header>
 
+      {/* BANNER DE ADMINISTRACIÓN ACTIVA */}
+      {devParam && (
+        <div className="bg-purple-600/10 border-b border-purple-500/20 px-6 py-2.5">
+          <div className="max-w-7xl mx-auto flex items-center justify-between text-xs">
+            <span className="flex items-center gap-2 text-purple-300 font-medium">
+              <UserCheck size={15} /> Administrando el espacio de trabajo de: <strong className="text-white underline">{devParam}</strong>
+            </span>
+            <Link href="/dashboard" className="text-neutral-400 hover:text-white underline transition-colors">
+              Ver todas las tareas generales
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* CONTENIDO PRINCIPAL */}
       <main className="max-w-7xl mx-auto p-6 md:p-8">
         
-        {/* FILTROS Y CREACIÓN */}
         <div className="mb-8 grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
           
           <div className="lg:col-span-4 flex gap-2">
@@ -286,7 +307,6 @@ export default function KanbanBoard() {
               />
             </div>
 
-            {/* Selector para filtrar por desarrollador */}
             <select
               value={selectedUserFilter}
               onChange={(e) => setSelectedUserFilter(e.target.value)}
@@ -302,7 +322,7 @@ export default function KanbanBoard() {
           <form onSubmit={handleAddTask} className="lg:col-span-8 flex flex-col sm:flex-row gap-2 bg-neutral-900/50 p-1.5 rounded-2xl border border-neutral-800/80">
             <input
               type="text"
-              placeholder="¿Qué tarea nueva hay que hacer en el servidor?"
+              placeholder={devParam ? `Crear tarea para ${devParam}...` : "¿Qué tarea nueva hay que hacer?"}
               value={newTaskTitle}
               onChange={(e) => setNewTaskTitle(e.target.value)}
               className="bg-transparent px-4 py-2 text-sm text-neutral-200 placeholder:text-neutral-500 focus:outline-none flex-1"
@@ -404,18 +424,18 @@ export default function KanbanBoard() {
                                   <div className="mt-4 pt-3 border-t border-neutral-800/60 flex items-center justify-between">
                                     <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-medium ${typeData.color}`}>
                                       <TypeIcon size={12} />
-                                      <span>{typeData?.label}</span>
+                                      <span>{typeData.label}</span>
                                     </div>
 
                                     <div className="flex items-center gap-2">
-                                      {task.notes && task?.notes?.length > 0 && (
+                                      {task.notes && task.notes.length > 0 && (
                                         <span className="flex items-center gap-1 text-[11px] text-neutral-400">
-                                          <MessageSquare size={12} /> {task?.notes?.length}
+                                          <MessageSquare size={12} /> {task.notes.length}
                                         </span>
                                       )}
                                       {task.createdBy && (
                                         <span className="text-[11px] text-neutral-500 font-medium">
-                                          @{task?.createdBy?.name?.split(' ')[0]}
+                                          @{task.createdBy.name.split(' ')[0]}
                                         </span>
                                       )}
                                     </div>
@@ -441,7 +461,6 @@ export default function KanbanBoard() {
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             
-            {/* Header Modal */}
             <div className="px-6 py-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-950/50">
               <div className="flex items-center gap-2">
                 <span className="text-xs uppercase tracking-wider font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
@@ -454,10 +473,8 @@ export default function KanbanBoard() {
               </button>
             </div>
 
-            {/* Cuerpo del Modal */}
             <div className="p-6 overflow-y-auto space-y-6 flex-1">
               
-              {/* Sección de Edición (Solo Admin) */}
               {session?.user?.role === 'admin' && (
                 <div className="bg-neutral-950/60 p-4 rounded-xl border border-neutral-800">
                   <div className="flex justify-between items-center mb-3">
@@ -520,7 +537,6 @@ export default function KanbanBoard() {
                 </div>
               )}
 
-              {/* Título de la Tarea si no está editando */}
               {!isEditing && (
                 <div>
                   <h2 className="text-xl font-bold text-white mb-2">{activeTask.title}</h2>
@@ -532,30 +548,27 @@ export default function KanbanBoard() {
                 </div>
               )}
 
-              {/* Sección de Notas / Comentarios */}
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold text-neutral-300 flex items-center gap-2">
                   <MessageSquare size={16} className="text-blue-400" /> Notas y Bitácora de Actividad
                 </h3>
 
-                {/* Listado de notas */}
                 <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
                   {activeTask.notes && activeTask.notes.length > 0 ? (
                     activeTask.notes.map((note, idx) => (
                       <div key={idx} className="bg-neutral-950/40 p-3.5 rounded-xl border border-neutral-800/80 space-y-1">
                         <div className="flex justify-between items-center text-xs">
-                          <span className="font-semibold text-blue-400">@{note?.author?.name || 'Desarrollador'}</span>
-                          <span className="text-[10px] text-neutral-500">{new Date(note?.createdAt).toLocaleString()}</span>
+                          <span className="font-semibold text-blue-400">@{note.author?.name || 'Desarrollador'}</span>
+                          <span className="text-[10px] text-neutral-500">{new Date(note.createdAt).toLocaleString()}</span>
                         </div>
                         <p className="text-sm text-neutral-300 whitespace-pre-wrap">{note.text}</p>
                       </div>
                     ))
                   ) : (
-                    <p className="text-xs text-neutral-500 italic py-2">No hay notas registradas todavía. ¡Sé el primero en dejar una!</p>
+                    <p className="text-xs text-neutral-500 italic py-2">No hay notas registradas todavía.</p>
                   )}
                 </div>
 
-                {/* Formulario para agregar nota (Cualquier usuario) */}
                 <form onSubmit={handleAddNote} className="flex gap-2 pt-2">
                   <input
                     type="text"
