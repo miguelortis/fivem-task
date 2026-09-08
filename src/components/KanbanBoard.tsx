@@ -167,8 +167,8 @@ export default function KanbanBoard() {
           {/* Información de Usuario y Botones de Escritorio */}
           <div className="hidden md:flex items-center gap-4">
             <div className="text-right">
-              <p className="text-xs text-neutral-400">Conectado como</p>
               <p className="text-sm font-semibold text-neutral-200">{session?.user?.name}</p>
+              <p className="text-xs text-neutral-400">{session?.user?.role === "admin" ? "Administrador" : "Usuario"}</p>
             </div>
 
             <div className="h-6 w-[1px] bg-neutral-800" />
