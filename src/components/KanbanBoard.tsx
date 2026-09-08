@@ -252,9 +252,10 @@ export default function KanbanBoard() {
                                 ref={provided.innerRef}
                                 {...provided.draggableProps}
                                 {...provided.dragHandleProps}
-                                className={`mb-3 p-4 rounded-xl bg-neutral-900 select-none group transition-all border-2 ${
-                                  snapshot.isDragging
-                                    ? 'shadow-xl shadow-blue-500/10 border-blue-500/50 scale-[1.02]'
+                                className={`mb-3 p-4 rounded-xl bg-neutral-900 select-none group transition-colors duration-200 border-2 ${
+                                    snapshot.isDragging
+                                    // 2. Quitamos el scale-[1.02] y aumentamos un poco la sombra para compensar
+                                    ? 'shadow-2xl shadow-blue-500/10 border-blue-500/50'
                                     : `border-neutral-800/90 ${isSearching ? '' : 'hover:border-neutral-700'} ${priorityConfig[task.priority]}`
                                 } ${isSearching ? 'cursor-default' : 'cursor-grab'}`}
                               >
