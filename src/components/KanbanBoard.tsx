@@ -147,7 +147,7 @@ export default function KanbanBoard() {
               </div>
               <div>
                 <h1 className="font-bold text-base tracking-tight text-white leading-none">FiveM Dev</h1>
-                <span className="text-[11px] text-neutral-400 font-medium">Task Manager</span>
+                <span className="text-[11px] text-neutral-400 font-medium">Administrador de tareas</span>
               </div>
             </div>
 
