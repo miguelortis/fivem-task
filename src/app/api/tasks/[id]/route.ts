@@ -5,7 +5,7 @@ import connectDB from "@/lib/mongodb";
 import Task from "@/models/Task";
 
 // Actualizar una tarea (Mover de columna, añadir nota, etc.)
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getServerSession(authOptions);
     if (!session) return NextResponse.json({ message: "No autorizado" }, { status: 401 });
@@ -66,7 +66,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 }
 
 // Eliminar una tarea (Solo admins)
-export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== "admin") {
