@@ -24,65 +24,52 @@ const priorityConfig: Record<TaskPriority, string> = {
   low: 'border-transparent',
   medium: 'border-transparent',
   high: 'border-orange-500/50 shadow-orange-500/10',
-  critical: 'border-red-500 shadow-red-500/20 shadow-lg animate-pulse', // Destaca los bugs graves
+  critical: 'border-red-500 shadow-red-500/20 shadow-lg animate-pulse',
 };
 
 export default function KanbanBoard() {
-  const { data: session } = useSession();
+  // AQUÍ ESTÁ LA CORRECCIÓN: Extraemos 'status' de useSession
+  const { data: session, status } = useSession(); 
   const { columns, setTasksFromDB, optimisticMove, optimisticAdd, optimisticDelete } = useTaskStore();
   
   const [isMounted, setIsMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
-  // Estados del formulario
+  // Estados del formulario y buscador
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskType, setNewTaskType] = useState<TaskType>('feature');
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>('medium');
-
   const [searchTerm, setSearchTerm] = useState('');
 
-  // 1. Cargar tareas al iniciar
-useEffect(() => {
-  setIsMounted(true);
-
-  // 2. Si NextAuth aún está cargando para saber si hay sesión, no hacemos nada
-  if (status === 'loading') return;
-
-  // 3. Si el usuario no está autenticado, detenemos el fetch
-  if (status === 'unauthenticated') {
-    setIsLoading(false);
-    return;
-  }
-
-  // 4. Si llegamos aquí, SÍ hay sesión, entonces pedimos las tareas
-  fetch('/api/tasks')
-    .then(async (res) => {
-      // Opcional: Manejar si la API devuelve un error de todos modos
-      if (!res.ok) throw new Error("Error en la respuesta de la API");
-      return res.json();
-    })
-    .then(data => {
-      if (Array.isArray(data)) setTasksFromDB(data);
-      setIsLoading(false);
-    })
-    .catch(err => {
-      console.error("Error cargando tareas:", err);
-      setIsLoading(false);
-    });
-
-// 5. Agrega 'status' al arreglo de dependencias del useEffect
-}, [setTasksFromDB, status]);
-
-  // 1. Lógica de Filtrado: 
-  // Creamos una copia de las columnas que solo contenga las tareas que coinciden con la búsqueda
+  // Lógica de Filtrado
   const filteredColumns = {
     todo: columns.todo.filter(t => t.title.toLowerCase().includes(searchTerm.toLowerCase())),
     inProgress: columns.inProgress.filter(t => t.title.toLowerCase().includes(searchTerm.toLowerCase())),
     done: columns.done.filter(t => t.title.toLowerCase().includes(searchTerm.toLowerCase())),
   };
-
-  // 2. Variable para saber si estamos buscando (para desactivar el drag & drop)
   const isSearching = searchTerm.trim().length > 0;
+
+  // 1. Cargar tareas al iniciar (Protegido por NextAuth)
+  useEffect(() => {
+    setIsMounted(true);
+
+    if (status === 'loading') return;
+    if (status === 'unauthenticated') {
+      setIsLoading(false);
+      return;
+    }
+
+    fetch('/api/tasks')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) setTasksFromDB(data);
+        setIsLoading(false);
+      })
+      .catch(err => {
+        console.error("Error cargando tareas:", err);
+        setIsLoading(false);
+      });
+  }, [setTasksFromDB, status]); // status ya está definido arriba
 
   // 2. Manejar Drag & Drop
   const onDragEnd = async (result: DropResult) => {
@@ -90,7 +77,6 @@ useEffect(() => {
     const { source, destination, draggableId } = result;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
 
-    // Actualización optimista (UI instantánea)
     optimisticMove(
       source.droppableId as keyof typeof columns,
       destination.droppableId as keyof typeof columns,
@@ -98,7 +84,6 @@ useEffect(() => {
       destination.index
     );
 
-    // Aviso a la base de datos en segundo plano
     try {
       await fetch(`/api/tasks/${draggableId}`, {
         method: 'PATCH',
@@ -107,7 +92,6 @@ useEffect(() => {
       });
     } catch (error) {
       console.error("Error moviendo tarea:", error);
-      // Aquí se podría revertir el movimiento si falla la API
     }
   };
 
@@ -131,7 +115,7 @@ useEffect(() => {
 
       if (res.ok) {
         const newTaskDB = await res.json();
-        optimisticAdd(newTaskDB); // Añadir a la UI con el ID real de MongoDB
+        optimisticAdd(newTaskDB);
         setNewTaskTitle('');
       }
     } catch (error) {
@@ -153,7 +137,7 @@ useEffect(() => {
   };
 
   if (!isMounted) return null;
-  if (isLoading) return <div className="min-h-screen bg-neutral-950 flex items-center justify-center text-neutral-400">Sincronizando base de datos...</div>;
+  if (isLoading) return <div className="min-h-screen bg-neutral-950 flex items-center justify-center text-neutral-400">Cargando base de datos...</div>;
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-200 p-6 md:p-10 font-sans">
@@ -165,7 +149,6 @@ useEffect(() => {
             </h1>
             <p className="text-neutral-400 text-sm mt-1">Conectado como: <span className="text-neutral-300 font-semibold">{session?.user?.name}</span></p>
             
-            {/* NUEVA BARRA DE BÚSQUEDA */}
             <div className="mt-4 relative max-w-md">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Search size={16} className="text-neutral-500" />
@@ -183,7 +166,7 @@ useEffect(() => {
           <form onSubmit={handleAddTask} className="flex flex-wrap gap-2 bg-neutral-900/80 p-2 rounded-xl border border-neutral-800 w-full xl:w-auto">
             <input
               type="text"
-              placeholder="Ej: Fix exploit de dinero..."
+              placeholder="Ej: Fix exploit..."
               value={newTaskTitle}
               onChange={(e) => setNewTaskTitle(e.target.value)}
               className="bg-neutral-950 px-3 py-2 rounded-lg outline-none border border-neutral-800 text-sm flex-1 md:w-64 focus:border-blue-500"
@@ -223,7 +206,6 @@ useEffect(() => {
               <div key={colId} className="flex flex-col gap-3">
                 <div className="flex items-center justify-between px-1">
                   <h2 className="font-semibold text-neutral-300 text-base">{columnNames[colId]}</h2>
-                  {/* Actualizamos el contador para que muestre (Filtradas / Totales) si estamos buscando */}
                   <span className="text-xs bg-neutral-800 px-2 py-0.5 rounded-full text-neutral-400 font-mono">
                     {isSearching ? `${filteredColumns[colId].length} / ${columns[colId].length}` : columns[colId].length}
                   </span>
@@ -238,14 +220,12 @@ useEffect(() => {
                         snapshot.isDraggingOver ? 'bg-neutral-900/60 border-blue-500/40' : 'bg-neutral-900/30 border-neutral-800/80'
                       }`}
                     >
-                      {/* AVISO VISUAL: Si está buscando, le decimos que no puede arrastrar */}
                       {isSearching && (
                         <div className="mb-3 text-[11px] text-center text-amber-500/70 bg-amber-500/10 py-1 rounded border border-amber-500/20">
                           Arrastre desactivado durante la búsqueda
                         </div>
                       )}
 
-                      {/* CAMBIO CLAVE: Mapeamos filteredColumns en vez de columns */}
                       {filteredColumns[colId].map((task, index) => {
                         const TypeIcon = typeConfig[task.type].icon;
                         return (
@@ -253,14 +233,13 @@ useEffect(() => {
                             key={task._id} 
                             draggableId={task._id} 
                             index={index}
-                            isDragDisabled={isSearching} // Bloquea el arrastre aquí
+                            isDragDisabled={isSearching}
                           >
                             {(provided, snapshot) => (
                               <div
                                 ref={provided.innerRef}
                                 {...provided.draggableProps}
                                 {...provided.dragHandleProps}
-                                // Si está buscando, bajamos un poco la opacidad del hover para que no parezca arrastrable
                                 className={`mb-3 p-4 rounded-xl bg-neutral-900 select-none group transition-all border-2 ${
                                   snapshot.isDragging
                                     ? 'shadow-xl shadow-blue-500/10 border-blue-500/50 scale-[1.02]'
@@ -270,7 +249,6 @@ useEffect(() => {
                                 <div className="flex justify-between items-start gap-2">
                                   <p className="text-sm font-medium text-neutral-200 leading-snug">{task.title}</p>
                                   
-                                  {/* Solo los administradores pueden borrar */}
                                   {session?.user?.role === 'admin' && (
                                     <button
                                       onClick={() => handleDeleteTask(colId, task._id)}
@@ -289,7 +267,7 @@ useEffect(() => {
                                   
                                   {task.createdBy && (
                                     <span className="text-[10px] text-neutral-500 font-medium">
-                                      Creado por: {task.createdBy.name.split(' ')[0]}
+                                      Creador: {task.createdBy.name.split(' ')[0]}
                                     </span>
                                   )}
                                 </div>
