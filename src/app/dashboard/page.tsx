@@ -1,13 +1,9 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "../api/auth/[...nextauth]/route";
+import KanbanBoard from '@/components/KanbanBoard';
 
-export default async function DashboardPage() {
-  const session = await getServerSession(authOptions);
-
+export default function DashboardPage() {
   return (
-    <div className="p-10 text-white">
-      <h1>Bienvenido al Dashboard, {session?.user?.name}</h1>
-      <p>Tu rol es: {session?.user?.role}</p>
-    </div>
+    <main>
+      <KanbanBoard />
+    </main>
   );
 }
