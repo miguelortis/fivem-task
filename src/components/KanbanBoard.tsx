@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
+import { useSession, signOut } from 'next-auth/react';
+import { Bug, Cpu, Wrench, Zap, Search, Plus, Trash2, LogOut } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { useTaskStore, Task, TaskType, TaskPriority } from '@/store/useTaskStore';
-import { Bug, Cpu, Wrench, Zap, Search, Plus, Trash2 } from 'lucide-react';
 
 const columnNames = {
   todo: 'Por Hacer 📝',
@@ -147,8 +147,20 @@ export default function KanbanBoard() {
             <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
               FiveM Dev Tasks
             </h1>
-            <p className="text-neutral-400 text-sm mt-1">Conectado como: <span className="text-neutral-300 font-semibold">{session?.user?.name}</span></p>
             
+            {/* NUEVO CONTENEDOR FLEX PARA USUARIO Y BOTÓN DE SALIDA */}
+            <div className="flex items-center gap-3 mt-1">
+              <p className="text-neutral-400 text-sm">
+                Conectado como: <span className="text-neutral-300 font-semibold">{session?.user?.name}</span>
+              </p>
+              <button
+                onClick={() => signOut({ callbackUrl: '/login' })}
+                className="flex items-center gap-1.5 text-xs bg-red-500/10 text-red-400 hover:bg-red-500/20 px-2 py-1 rounded-md border border-red-500/20 transition-colors"
+                title="Cerrar sesión"
+              >
+                <LogOut size={14} /> Salir
+              </button>
+            </div>
             <div className="mt-4 relative max-w-md">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Search size={16} className="text-neutral-500" />
