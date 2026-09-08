@@ -15,6 +15,7 @@ const TaskSchema = new Schema(
       enum: ['todo', 'inProgress', 'done'], 
       default: 'todo' 
     },
+    order: { type: Number, default: 0 },
     type: { 
       type: String, 
       enum: ['bug', 'feature', 'tweak', 'optimization', 'research'], 

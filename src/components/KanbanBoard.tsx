@@ -74,9 +74,10 @@ export default function KanbanBoard() {
   // 2. Manejar Drag & Drop
   const onDragEnd = async (result: DropResult) => {
     if (!result.destination) return;
-    const { source, destination, draggableId } = result;
+    const { source, destination } = result;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
 
+    // 1. Actualización instantánea en pantalla (Zustand)
     optimisticMove(
       source.droppableId as keyof typeof columns,
       destination.droppableId as keyof typeof columns,
@@ -84,14 +85,26 @@ export default function KanbanBoard() {
       destination.index
     );
 
+    // 2. Extraer el nuevo orden directamente del estado fresco
+    const freshColumns = useTaskStore.getState().columns;
+    const destColumn = freshColumns[destination.droppableId as keyof typeof columns];
+
+    // Mapeamos las tarjetas asignándoles su nuevo índice (0, 1, 2...)
+    const reorderedItems = destColumn.map((task, index) => ({
+      _id: task._id,
+      status: destination.droppableId,
+      order: index
+    }));
+
+    // 3. Enviar todo el bloque a MongoDB en segundo plano
     try {
-      await fetch(`/api/tasks/${draggableId}`, {
-        method: 'PATCH',
+      await fetch('/api/tasks/reorder', {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: destination.droppableId }),
+        body: JSON.stringify({ items: reorderedItems }),
       });
     } catch (error) {
-      console.error("Error moviendo tarea:", error);
+      console.error("Error guardando orden:", error);
     }
   };
 

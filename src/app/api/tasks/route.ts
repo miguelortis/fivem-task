@@ -31,7 +31,7 @@ export async function GET(req: Request) {
       .populate("assignedTo", "name email")
       .populate("createdBy", "name")
       .populate("lastModifiedBy", "name")
-      .sort({ createdAt: -1 });
+      .sort({ order: 1, createdAt: -1 }); // Primero por orden numérico, luego por fecha
 
     return NextResponse.json(tasks);
   } catch (error) {
@@ -50,6 +50,8 @@ export async function POST(req: Request) {
 
     await connectDB();
 
+    const totalTasks = await Task.countDocuments({ status: "todo" });
+    
     const newTask = await Task.create({
       title,
       description,
@@ -60,6 +62,7 @@ export async function POST(req: Request) {
       createdBy: session.user.id, // Se registra quién la creó automáticamente
       deadline: deadline ? new Date(deadline) : null,
       status: "todo", // Por defecto caen en "Por Hacer"
+      order: totalTasks,
     });
 
     // Hacemos populate para devolver la tarea con el nombre del creador/asignado
