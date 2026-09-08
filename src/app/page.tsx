@@ -1,6 +1,8 @@
 import KanbanBoard from '@/components/KanbanBoard';
 
-export default function Home() {
+export const dynamic = 'force-dynamic';
+
+export default function DashboardPage() {
   return (
     <main>
       <KanbanBoard />
