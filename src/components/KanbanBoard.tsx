@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { useTaskStore, Task, TaskType, TaskPriority } from '@/store/useTaskStore';
-import { Bug, Cpu, Wrench, Zap, Search, Plus, Trash2, LogOut, Shield, Layers, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
+import { Bug, Cpu, Wrench, Zap, Search, Plus, Trash2, LogOut, Shield, Layers, CheckCircle2, Clock, MessageSquare, X, Edit3, Send } from 'lucide-react';
 import Link from 'next/link';
 
 const columnConfig = {
@@ -39,13 +39,39 @@ export default function KanbanBoard() {
   const [newTaskType, setNewTaskType] = useState<TaskType>('feature');
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>('medium');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedUserFilter, setSelectedUserFilter] = useState('all');
 
+  // Estado para el Modal de Tarea (Notas y Edición)
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [newNoteText, setNewNoteText] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editType, setEditType] = useState<TaskType>('feature');
+  const [editPriority, setEditPriority] = useState<TaskPriority>('medium');
+
+  // Filtrado de columnas (Búsqueda + Filtro por desarrollador)
   const filteredColumns = {
-    todo: columns.todo.filter(t => t.title.toLowerCase().includes(searchTerm.toLowerCase())),
-    inProgress: columns.inProgress.filter(t => t.title.toLowerCase().includes(searchTerm.toLowerCase())),
-    done: columns.done.filter(t => t.title.toLowerCase().includes(searchTerm.toLowerCase())),
+    todo: columns.todo.filter(t => {
+      const matchSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchUser = selectedUserFilter === 'all' || t.createdBy?._id === selectedUserFilter || t.createdBy?.name === selectedUserFilter;
+      return matchSearch && matchUser;
+    }),
+    inProgress: columns.inProgress.filter(t => {
+      const matchSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchUser = selectedUserFilter === 'all' || t.createdBy?._id === selectedUserFilter || t.createdBy?.name === selectedUserFilter;
+      return matchSearch && matchUser;
+    }),
+    done: columns.done.filter(t => {
+      const matchSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchUser = selectedUserFilter === 'all' || t.createdBy?._id === selectedUserFilter || t.createdBy?.name === selectedUserFilter;
+      return matchSearch && matchUser;
+    }),
   };
-  const isSearching = searchTerm.trim().length > 0;
+  const isSearching = searchTerm.trim().length > 0 || selectedUserFilter !== 'all';
+
+  // Obtener lista única de desarrolladores para el filtro
+  const allTasksList = [...columns.todo, ...columns.inProgress, ...columns.done];
+  const uniqueCreators = Array.from(new Set(allTasksList.map(t => t.createdBy?.name).filter(Boolean)));
 
   useEffect(() => {
     setIsMounted(true);
@@ -119,14 +145,75 @@ export default function KanbanBoard() {
     }
   };
 
-  const handleDeleteTask = async (colId: keyof typeof columns, taskId: string) => {
+  const handleDeleteTask = async (colId: keyof typeof columns, taskId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     if (!confirm('¿Eliminar esta tarea permanentemente?')) return;
     optimisticDelete(colId, taskId);
+    if (activeTask?._id === taskId) setActiveTask(null);
     try {
       await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
     } catch (error) {
       console.error("Error eliminando tarea:", error);
     }
+  };
+
+  // Enviar Nota
+  const handleAddNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newNoteText.trim() || !activeTask) return;
+
+    try {
+      const res = await fetch(`/api/tasks/${activeTask._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newNote: newNoteText }),
+      });
+
+      if (res.ok) {
+        const updated = await res.json();
+        setActiveTask(updated);
+        setNewNoteText('');
+        // Recargar el store completo para refrescar la tarjeta en el fondo
+        const tasksRes = await fetch('/api/tasks');
+        const tasksData = await tasksRes.json();
+        if (Array.isArray(tasksData)) setTasksFromDB(tasksData);
+      }
+    } catch (error) {
+      console.error("Error enviando nota:", error);
+    }
+  };
+
+  // Guardar Edición (Solo Admin)
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeTask) return;
+
+    try {
+      const res = await fetch(`/api/tasks/${activeTask._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: editTitle, type: editType, priority: editPriority }),
+      });
+
+      if (res.ok) {
+        const updated = await res.json();
+        setActiveTask(updated);
+        setIsEditing(false);
+        const tasksRes = await fetch('/api/tasks');
+        const tasksData = await tasksRes.json();
+        if (Array.isArray(tasksData)) setTasksFromDB(tasksData);
+      }
+    } catch (error) {
+      console.error("Error editando tarea:", error);
+    }
+  };
+
+  const openTaskModal = (task: Task) => {
+    setActiveTask(task);
+    setEditTitle(task.title);
+    setEditType(task.type);
+    setEditPriority(task.priority);
+    setIsEditing(false);
   };
 
   if (!isMounted) return null;
@@ -135,11 +222,9 @@ export default function KanbanBoard() {
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-neutral-100 font-sans selection:bg-blue-500/30">
       
-      {/* NAVBAR SUPERIOR MODERNO */}
+      {/* NAVBAR SUPERIOR */}
       <header className="border-b border-neutral-800/80 bg-neutral-900/40 backdrop-blur-md sticky top-0 z-30 px-6 py-4">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
-          
-          {/* Logo y Título */}
           <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-start">
             <div className="flex items-center gap-2.5">
               <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-blue-600 to-emerald-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
@@ -147,11 +232,10 @@ export default function KanbanBoard() {
               </div>
               <div>
                 <h1 className="font-bold text-base tracking-tight text-white leading-none">FiveM Dev</h1>
-                <span className="text-[11px] text-neutral-400 font-medium">Administrador de tareas</span>
+                <span className="text-[11px] text-neutral-400 font-medium">Task Manager</span>
               </div>
             </div>
 
-            {/* Acciones móviles de usuario */}
             <div className="flex md:hidden items-center gap-2">
               {session?.user?.role === 'admin' && (
                 <Link href="/admin" className="p-2 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20">
@@ -164,50 +248,58 @@ export default function KanbanBoard() {
             </div>
           </div>
 
-          {/* Información de Usuario y Botones de Escritorio */}
           <div className="hidden md:flex items-center gap-4">
             <div className="text-right">
+              <p className="text-xs text-neutral-400">Conectado como</p>
               <p className="text-sm font-semibold text-neutral-200">{session?.user?.name}</p>
-              <p className="text-xs text-neutral-400">{session?.user?.role === "admin" ? "Administrador" : "Usuario"}</p>
             </div>
-
             <div className="h-6 w-[1px] bg-neutral-800" />
-
             <div className="flex items-center gap-2">
               {session?.user?.role === 'admin' && (
                 <Link href="/admin" className="flex items-center gap-1.5 text-xs font-medium bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 px-3 py-2 rounded-xl border border-purple-500/20 transition-all">
                   <Shield size={14} /> Panel Admin
                 </Link>
               )}
-              <button onClick={() => signOut({ callbackUrl: `${window.location.origin}/login` })} className="flex items-center gap-1.5 text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 px-3 py-2 rounded-xl border border-red-500/20 transition-all" title="Cerrar sesión">
+              <button onClick={() => signOut({ callbackUrl: `${window.location.origin}/login` })} className="flex items-center gap-1.5 text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 px-3 py-2 rounded-xl border border-red-500/20 transition-all">
                 <LogOut size={14} /> Salir
               </button>
             </div>
           </div>
-
         </div>
       </header>
 
       {/* CONTENIDO PRINCIPAL */}
       <main className="max-w-7xl mx-auto p-6 md:p-8">
         
-        {/* BARRA DE ACCIONES (BUSCADOR + FORMULARIO DE CREACIÓN) */}
+        {/* FILTROS Y CREACIÓN */}
         <div className="mb-8 grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
           
-          {/* Buscador */}
-          <div className="lg:col-span-4 relative">
-            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500" />
-            <input
-              type="text"
-              placeholder="Buscar tarea..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-neutral-900/80 border border-neutral-800/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/10 transition-all shadow-inner"
-            />
+          <div className="lg:col-span-4 flex gap-2">
+            <div className="relative flex-1">
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500" />
+              <input
+                type="text"
+                placeholder="Buscar tarea..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full bg-neutral-900/80 border border-neutral-800/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:border-blue-500/50"
+              />
+            </div>
+
+            {/* Selector para filtrar por desarrollador */}
+            <select
+              value={selectedUserFilter}
+              onChange={(e) => setSelectedUserFilter(e.target.value)}
+              className="bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2.5 text-xs text-neutral-300 focus:outline-none cursor-pointer"
+            >
+              <option value="all">Todos los Devs</option>
+              {uniqueCreators.map((name, i) => (
+                <option key={i} value={name}>{name}</option>
+              ))}
+            </select>
           </div>
 
-          {/* Formulario Crear Tarea Rápida */}
-          <form onSubmit={handleAddTask} className="lg:col-span-8 flex flex-col sm:flex-row gap-2 bg-neutral-900/50 p-1.5 rounded-2xl border border-neutral-800/80 backdrop-blur-sm">
+          <form onSubmit={handleAddTask} className="lg:col-span-8 flex flex-col sm:flex-row gap-2 bg-neutral-900/50 p-1.5 rounded-2xl border border-neutral-800/80">
             <input
               type="text"
               placeholder="¿Qué tarea nueva hay que hacer en el servidor?"
@@ -215,7 +307,6 @@ export default function KanbanBoard() {
               onChange={(e) => setNewTaskTitle(e.target.value)}
               className="bg-transparent px-4 py-2 text-sm text-neutral-200 placeholder:text-neutral-500 focus:outline-none flex-1"
             />
-            
             <div className="flex items-center gap-2 px-2 sm:px-0">
               <select
                 value={newTaskType}
@@ -260,8 +351,6 @@ export default function KanbanBoard() {
               
               return (
                 <div key={colId} className="flex flex-col gap-3">
-                  
-                  {/* Encabezado de Columna */}
                   <div className="flex items-center justify-between px-2 py-1">
                     <div className="flex items-center gap-2">
                       <ColIcon size={16} className={config.color} />
@@ -272,54 +361,38 @@ export default function KanbanBoard() {
                     </span>
                   </div>
 
-                  {/* Contenedor Droppable */}
                   <Droppable droppableId={colId}>
                     {(provided, snapshot) => (
                       <div
                         {...provided.droppableProps}
                         ref={provided.innerRef}
                         className={`min-h-[650px] p-3 rounded-2xl border transition-all duration-200 flex flex-col gap-3 ${
-                          snapshot.isDraggingOver 
-                            ? 'bg-neutral-900/50 border-blue-500/30 shadow-inner' 
-                            : 'bg-neutral-900/20 border-neutral-800/60'
+                          snapshot.isDraggingOver ? 'bg-neutral-900/50 border-blue-500/30 shadow-inner' : 'bg-neutral-900/20 border-neutral-800/60'
                         }`}
                       >
-                        {isSearching && (
-                          <div className="text-[11px] text-center text-amber-400/80 bg-amber-500/10 py-1.5 rounded-xl border border-amber-500/20 font-medium">
-                            Arrastre bloqueado por búsqueda
-                          </div>
-                        )}
-
                         {filteredColumns[colId].map((task, index) => {
                           const typeData = typeConfig[task.type];
                           const TypeIcon = typeData.icon;
                           const priorityData = priorityConfig[task.priority];
 
                           return (
-                            <Draggable 
-                              key={task._id} 
-                              draggableId={task._id} 
-                              index={index}
-                              isDragDisabled={isSearching}
-                            >
+                            <Draggable key={task._id} draggableId={task._id} index={index}>
                               {(provided, snapshot) => (
                                 <div
                                   ref={provided.innerRef}
                                   {...provided.draggableProps}
                                   {...provided.dragHandleProps}
-                                  className={`p-4 rounded-xl bg-neutral-900/90 select-none group transition-colors duration-200 border relative ${
-                                    snapshot.isDragging
-                                      ? 'shadow-2xl shadow-blue-500/20 border-blue-500/50 z-50'
-                                      : `border-neutral-800/80 ${isSearching ? '' : 'hover:border-neutral-700'} ${priorityData.class}`
-                                  } ${isSearching ? 'cursor-default' : 'cursor-grab'}`}
+                                  onClick={() => openTaskModal(task)}
+                                  className={`p-4 rounded-xl bg-neutral-900/90 select-none group transition-colors duration-200 border relative cursor-pointer ${
+                                    snapshot.isDragging ? 'shadow-2xl shadow-blue-500/20 border-blue-500/50 z-50' : `border-neutral-800/80 hover:border-neutral-700 ${priorityData.class}`
+                                  }`}
                                 >
-                                  {/* Título de la tarjeta */}
                                   <div className="flex justify-between items-start gap-3">
                                     <p className="text-sm font-medium text-neutral-100 leading-relaxed">{task.title}</p>
                                     
                                     {session?.user?.role === 'admin' && (
                                       <button
-                                        onClick={() => handleDeleteTask(colId, task._id)}
+                                        onClick={(e) => handleDeleteTask(colId, task._id, e)}
                                         className="text-neutral-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 shrink-0"
                                         title="Eliminar tarea"
                                       >
@@ -328,18 +401,24 @@ export default function KanbanBoard() {
                                     )}
                                   </div>
 
-                                  {/* Footer de la tarjeta: Etiqueta de tipo + Creador */}
                                   <div className="mt-4 pt-3 border-t border-neutral-800/60 flex items-center justify-between">
                                     <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-medium ${typeData.color}`}>
                                       <TypeIcon size={12} />
                                       <span>{typeData.label}</span>
                                     </div>
 
-                                    {task.createdBy && (
-                                      <span className="text-[11px] text-neutral-500 font-medium">
-                                        @{task.createdBy.name.split(' ')[0]}
-                                      </span>
-                                    )}
+                                    <div className="flex items-center gap-2">
+                                      {task.notes && task.notes.length > 0 && (
+                                        <span className="flex items-center gap-1 text-[11px] text-neutral-400">
+                                          <MessageSquare size={12} /> {task.notes.length}
+                                        </span>
+                                      )}
+                                      {task.createdBy && (
+                                        <span className="text-[11px] text-neutral-500 font-medium">
+                                          @{task.createdBy.name.split(' ')[0]}
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               )}
@@ -350,14 +429,155 @@ export default function KanbanBoard() {
                       </div>
                     )}
                   </Droppable>
-
                 </div>
               );
             })}
           </div>
         </DragDropContext>
-
       </main>
+
+      {/* MODAL DE TAREA: NOTAS Y EDICIÓN */}
+      {activeTask && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            
+            {/* Header Modal */}
+            <div className="px-6 py-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-950/50">
+              <div className="flex items-center gap-2">
+                <span className="text-xs uppercase tracking-wider font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                  {typeConfig[activeTask.type]?.label || 'Tarea'}
+                </span>
+                <span className="text-xs text-neutral-400">Creado por @{activeTask.createdBy?.name || 'Desconocido'}</span>
+              </div>
+              <button onClick={() => setActiveTask(null)} className="text-neutral-400 hover:text-white p-1 rounded-lg hover:bg-neutral-800">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Cuerpo del Modal */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1">
+              
+              {/* Sección de Edición (Solo Admin) */}
+              {session?.user?.role === 'admin' && (
+                <div className="bg-neutral-950/60 p-4 rounded-xl border border-neutral-800">
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-xs font-semibold text-purple-400 flex items-center gap-1">
+                      <Shield size={13} /> Controles de Administrador
+                    </span>
+                    <button 
+                      onClick={() => setIsEditing(!isEditing)} 
+                      className="text-xs bg-neutral-800 hover:bg-neutral-700 text-neutral-300 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1"
+                    >
+                      <Edit3 size={12} /> {isEditing ? 'Cancelar Edición' : 'Editar Tarea'}
+                    </button>
+                  </div>
+
+                  {isEditing && (
+                    <form onSubmit={handleSaveEdit} className="space-y-3 mt-3 pt-3 border-t border-neutral-800">
+                      <div>
+                        <label className="text-[11px] text-neutral-400 block mb-1">Título de la Tarea</label>
+                        <input
+                          type="text"
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[11px] text-neutral-400 block mb-1">Tipo</label>
+                          <select
+                            value={editType}
+                            onChange={(e) => setEditType(e.target.value as TaskType)}
+                            className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
+                          >
+                            <option value="feature">Script</option>
+                            <option value="bug">Bug</option>
+                            <option value="tweak">Mod</option>
+                            <option value="optimization">Optimización</option>
+                            <option value="research">Investigación</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[11px] text-neutral-400 block mb-1">Prioridad</label>
+                          <select
+                            value={editPriority}
+                            onChange={(e) => setEditPriority(e.target.value as TaskPriority)}
+                            className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
+                          >
+                            <option value="low">Baja</option>
+                            <option value="medium">Media</option>
+                            <option value="high">Alta</option>
+                            <option value="critical">Crítico</option>
+                          </select>
+                        </div>
+                      </div>
+                      <button type="submit" className="bg-purple-600 hover:bg-purple-500 text-white text-xs px-4 py-2 rounded-lg font-medium transition-colors">
+                        Guardar Cambios
+                      </button>
+                    </form>
+                  )}
+                </div>
+              )}
+
+              {/* Título de la Tarea si no está editando */}
+              {!isEditing && (
+                <div>
+                  <h2 className="text-xl font-bold text-white mb-2">{activeTask.title}</h2>
+                  <div className="flex gap-2 text-xs text-neutral-400">
+                    <span>Prioridad: <strong className="text-neutral-200 capitalize">{activeTask.priority}</strong></span>
+                    <span>•</span>
+                    <span>Estado: <strong className="text-neutral-200 capitalize">{activeTask.status}</strong></span>
+                  </div>
+                </div>
+              )}
+
+              {/* Sección de Notas / Comentarios */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-neutral-300 flex items-center gap-2">
+                  <MessageSquare size={16} className="text-blue-400" /> Notas y Bitácora de Actividad
+                </h3>
+
+                {/* Listado de notas */}
+                <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                  {activeTask.notes && activeTask.notes.length > 0 ? (
+                    activeTask.notes.map((note, idx) => (
+                      <div key={idx} className="bg-neutral-950/40 p-3.5 rounded-xl border border-neutral-800/80 space-y-1">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="font-semibold text-blue-400">@{note.author?.name || 'Desarrollador'}</span>
+                          <span className="text-[10px] text-neutral-500">{new Date(note.createdAt).toLocaleString()}</span>
+                        </div>
+                        <p className="text-sm text-neutral-300 whitespace-pre-wrap">{note.text}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-neutral-500 italic py-2">No hay notas registradas todavía. ¡Sé el primero en dejar una!</p>
+                  )}
+                </div>
+
+                {/* Formulario para agregar nota (Cualquier usuario) */}
+                <form onSubmit={handleAddNote} className="flex gap-2 pt-2">
+                  <input
+                    type="text"
+                    placeholder="Escribe una nota o actualización..."
+                    value={newNoteText}
+                    onChange={(e) => setNewNoteText(e.target.value)}
+                    className="flex-1 bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-neutral-500 focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    type="submit"
+                    className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 text-sm font-medium shadow-lg shadow-blue-600/20 shrink-0"
+                  >
+                    <Send size={15} /> Enviar
+                  </button>
+                </form>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

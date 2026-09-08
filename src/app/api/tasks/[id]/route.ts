@@ -12,7 +12,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     const { id } = await params;
     const body = await req.json();
-    const { status, newNote, assignedTo, priority } = body;
+    const { status, newNote, assignedTo, priority, title, type } = body;
 
     await connectDB();
     const task = await Task.findById(id);
@@ -37,6 +37,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     // Si el front envía un nuevo estado (ej. la arrastró a "En Progreso")
     if (status) updateData.status = status;
     if (priority) updateData.priority = priority;
+    if (title) updateData.title = title;       // <-- Añadir
+    if (type) updateData.type = type;         // <-- Añadir
     if (assignedTo !== undefined) updateData.assignedTo = assignedTo;
 
     // Si el front envía una nueva nota

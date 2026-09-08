@@ -142,6 +142,13 @@ export default function AdminDashboard() {
                             Quitar Admin
                           </button>
                         )}
+
+                        <Link 
+                        href={`/dashboard?dev=${encodeURIComponent(user.name)}`}
+                        className="px-3 py-1.5 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 rounded-lg transition-colors border border-blue-500/30 text-xs font-medium inline-flex items-center gap-1"
+                      >
+                        Ver Tareas
+                      </Link>
                       </div>
                     </td>
                   </tr>
