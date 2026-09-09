@@ -41,7 +41,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       )
       .populate("assignedTo", "name email")
       .populate("lastModifiedBy", "name email")
-      .populate("notes.author", "name email");
+      .populate("notes.author", "name email")
 
       return NextResponse.json(updatedTask);
     }
@@ -61,6 +61,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (priority) updateOps.$set.priority = priority;
     if (title && session.user.role === "admin") updateOps.$set.title = title;
     if (type && session.user.role === "admin") updateOps.$set.type = type;
+    
+    // Transferencia de tarea (Reasignar a otro desarrollador)
+    if (body.assignedTo !== undefined && session.user.role === "admin") {
+      updateOps.$set.assignedTo = body.assignedTo;
+    }
+
     if (assignedTo !== undefined) updateOps.$set.assignedTo = assignedTo;
 
     if (newNote) {
@@ -76,7 +82,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const updatedTask = await Task.findByIdAndUpdate(id, updateOps, { new: true })
       .populate("assignedTo", "name email")
       .populate("lastModifiedBy", "name email")
-      .populate("notes.author", "name email");
+      .populate("notes.author", "name email")
+      .populate("assignedTo", "name email")
 
     return NextResponse.json(updatedTask);
   } catch (error) {

@@ -44,8 +44,10 @@ export default function KanbanBoard() {
   const [newTaskType, setNewTaskType] = useState<TaskType>('feature');
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>('medium');
   const [searchTerm, setSearchTerm] = useState('');
+
+  const [systemUsers, setSystemUsers] = useState<Array<{ _id: string; name: string; email: string }>>([]);
+  const [transferTargetId, setTransferTargetId] = useState('');
   
-  // Por defecto, si hay parámetro de URL usamos ese ID. Si no, filtramos por "my" (mis tareas)
   const [selectedUserFilter, setSelectedUserFilter] = useState(userIdParam || 'my');
 
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -59,29 +61,27 @@ export default function KanbanBoard() {
     if (userIdParam) {
       setSelectedUserFilter(userIdParam);
     } else {
-      setSelectedUserFilter('my'); // Vuelve a "Mis Tareas" por defecto al salir
+      setSelectedUserFilter('my');
     }
   }, [userIdParam]);
 
-  // Lista única de creadores para el selector del dropdown
   const allTasksList = [...columns.todo, ...columns.inProgress, ...columns.done];
   const uniqueCreators = Array.from(
     new Map(
       allTasksList
-        .filter(t => t.createdBy?._id && t.createdBy?.name)
-        .map(t => [t?.createdBy?._id, t?.createdBy?.name])
+        .filter(t => t.assignedTo?._id && t.assignedTo?.name)
+        .map(t => [t?.assignedTo?._id, t?.assignedTo?.name])
     ).entries()
   ).map(([id, name]) => ({ id, name }));
 
-  // Lógica de Filtrado Inteligente
   const filteredColumns = {
     todo: columns.todo.filter(t => {
       const matchSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase());
       let matchUser = true;
       if (selectedUserFilter === 'my') {
-        matchUser = t.createdBy?._id === session?.user?.id;
+        matchUser = t.assignedTo?._id === session?.user?.id || (!t.assignedTo && t.createdBy?._id === session?.user?.id);
       } else if (selectedUserFilter !== 'all') {
-        matchUser = t.createdBy?._id === selectedUserFilter;
+        matchUser = t.assignedTo?._id === selectedUserFilter;
       }
       return matchSearch && matchUser;
     }),
@@ -89,9 +89,9 @@ export default function KanbanBoard() {
       const matchSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase());
       let matchUser = true;
       if (selectedUserFilter === 'my') {
-        matchUser = t.createdBy?._id === session?.user?.id;
+        matchUser = t.assignedTo?._id === session?.user?.id || (!t.assignedTo && t.createdBy?._id === session?.user?.id);
       } else if (selectedUserFilter !== 'all') {
-        matchUser = t.createdBy?._id === selectedUserFilter;
+        matchUser = t.assignedTo?._id === selectedUserFilter;
       }
       return matchSearch && matchUser;
     }),
@@ -99,9 +99,9 @@ export default function KanbanBoard() {
       const matchSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase());
       let matchUser = true;
       if (selectedUserFilter === 'my') {
-        matchUser = t.createdBy?._id === session?.user?.id;
+        matchUser = t.assignedTo?._id === session?.user?.id || (!t.assignedTo && t.createdBy?._id === session?.user?.id);
       } else if (selectedUserFilter !== 'all') {
-        matchUser = t.createdBy?._id === selectedUserFilter;
+        matchUser = t.assignedTo?._id === selectedUserFilter;
       }
       return matchSearch && matchUser;
     }),
@@ -126,7 +126,16 @@ export default function KanbanBoard() {
         console.error("Error cargando tareas:", err);
         setIsLoading(false);
       });
-  }, [setTasksFromDB, status]);
+
+    if (session?.user?.role === 'admin') {
+      fetch('/api/admin/users')
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) setSystemUsers(data);
+        })
+        .catch(err => console.error("Error cargando usuarios:", err));
+    }
+  }, [setTasksFromDB, status, session]);
 
   const onDragEnd = async (result: DropResult) => {
     if (!result.destination) return;
@@ -170,7 +179,6 @@ export default function KanbanBoard() {
         priority: newTaskPriority 
       };
 
-      // Si estás administrando a un usuario específico, enviamos su ID para que la tarea se cree para él
       if (userIdParam) {
         payload.targetUserId = userIdParam;
       }
@@ -227,6 +235,27 @@ export default function KanbanBoard() {
     }
   };
 
+  const handleDeleteNote = async (taskId: string, noteId: string) => {
+    if (!confirm('¿Estás seguro de eliminar esta nota?')) return;
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deleteNoteId: noteId }),
+      });
+
+      if (res.ok) {
+        const updated = await res.json();
+        setActiveTask(updated);
+        const tasksRes = await fetch('/api/tasks');
+        const tasksData = await tasksRes.json();
+        if (Array.isArray(tasksData)) setTasksFromDB(tasksData);
+      }
+    } catch (error) {
+      console.error("Error eliminando nota:", error);
+    }
+  };
+
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeTask) return;
@@ -248,6 +277,32 @@ export default function KanbanBoard() {
       }
     } catch (error) {
       console.error("Error editando tarea:", error);
+    }
+  };
+
+  const handleTransferTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!transferTargetId || !activeTask) return;
+    if (!confirm('¿Estás seguro de transferir la ejecución de esta tarea a otro usuario?')) return;
+
+    try {
+      const res = await fetch(`/api/tasks/${activeTask._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignedTo: transferTargetId }),
+      });
+
+      if (res.ok) {
+        const updated = await res.json();
+        setActiveTask(updated);
+        setTransferTargetId('');
+        const tasksRes = await fetch('/api/tasks');
+        const tasksData = await tasksRes.json();
+        if (Array.isArray(tasksData)) setTasksFromDB(tasksData);
+        alert('¡Tarea transferida exitosamente!');
+      }
+    } catch (error) {
+      console.error("Error transfiriendo tarea:", error);
     }
   };
 
@@ -342,7 +397,6 @@ export default function KanbanBoard() {
               />
             </div>
 
-            {/* EL SELECTOR SOLO APARECE SI NO ESTÁS ADMINISTRANDO A UN USUARIO ESPECÍFICO */}
             {!userIdParam && (
               <select
                 value={selectedUserFilter}
@@ -472,9 +526,9 @@ export default function KanbanBoard() {
                                           <MessageSquare size={12} /> {task.notes.length}
                                         </span>
                                       )}
-                                      {task.createdBy && (
-                                        <span className="text-[11px] text-neutral-500 font-medium">
-                                          @{task.createdBy.name.split(' ')[0]}
+                                      {task.assignedTo && (
+                                        <span className="text-[11px] text-blue-400/90 font-medium bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
+                                          @{task.assignedTo.name.split(' ')[0]}
                                         </span>
                                       )}
                                     </div>
@@ -495,7 +549,7 @@ export default function KanbanBoard() {
         </DragDropContext>
       </main>
 
-      {/* MODAL DE TAREA: NOTAS Y EDICIÓN */}
+      {/* MODAL DE TAREA: NOTAS, EDICIÓN Y TRANSFERENCIA */}
       {activeTask && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -505,7 +559,9 @@ export default function KanbanBoard() {
                 <span className="text-xs uppercase tracking-wider font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
                   {typeConfig[activeTask.type]?.label || 'Tarea'}
                 </span>
-                <span className="text-xs text-neutral-400">Creado por @{activeTask.createdBy?.name || 'Desconocido'}</span>
+                <span className="text-xs text-neutral-400">
+                  Asignado a: <strong className="text-blue-300">@{activeTask.assignedTo?.name || 'Nadie'}</strong>
+                </span>
               </div>
               <button onClick={() => setActiveTask(null)} className="text-neutral-400 hover:text-white p-1 rounded-lg hover:bg-neutral-800">
                 <X size={18} />
@@ -515,8 +571,8 @@ export default function KanbanBoard() {
             <div className="p-6 overflow-y-auto space-y-6 flex-1">
               
               {session?.user?.role === 'admin' && (
-                <div className="bg-neutral-950/60 p-4 rounded-xl border border-neutral-800">
-                  <div className="flex justify-between items-center mb-3">
+                <div className="bg-neutral-950/60 p-4 rounded-xl border border-neutral-800 space-y-4">
+                  <div className="flex justify-between items-center">
                     <span className="text-xs font-semibold text-purple-400 flex items-center gap-1">
                       <Shield size={13} /> Controles de Administrador
                     </span>
@@ -529,7 +585,7 @@ export default function KanbanBoard() {
                   </div>
 
                   {isEditing && (
-                    <form onSubmit={handleSaveEdit} className="space-y-3 mt-3 pt-3 border-t border-neutral-800">
+                    <form onSubmit={handleSaveEdit} className="space-y-3 pt-3 border-t border-neutral-800">
                       <div>
                         <label className="text-[11px] text-neutral-400 block mb-1">Título de la Tarea</label>
                         <input
@@ -573,6 +629,32 @@ export default function KanbanBoard() {
                       </button>
                     </form>
                   )}
+
+                  {/* Sección de Transferencia de Tarea */}
+                  <div className="pt-3 border-t border-neutral-800">
+                    <span className="text-[11px] text-neutral-400 block mb-2 font-medium">Transferir Tarea a otro Desarrollador</span>
+                    <form onSubmit={handleTransferTask} className="flex gap-2">
+                      <select
+                        value={transferTargetId}
+                        onChange={(e) => setTransferTargetId(e.target.value)}
+                        className="flex-1 bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
+                      >
+                        <option value="">Seleccionar desarrollador...</option>
+                        {systemUsers.map((u) => (
+                          <option key={u._id} value={u._id}>
+                            {u.name} ({u.email})
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="submit"
+                        disabled={!transferTargetId}
+                        className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs px-3 py-2 rounded-lg font-medium transition-colors shrink-0"
+                      >
+                        Transferir
+                      </button>
+                    </form>
+                  </div>
                 </div>
               )}
 
@@ -594,15 +676,30 @@ export default function KanbanBoard() {
 
                 <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
                   {activeTask.notes && activeTask.notes.length > 0 ? (
-                    activeTask.notes.map((note, idx) => (
-                      <div key={idx} className="bg-neutral-950/40 p-3.5 rounded-xl border border-neutral-800/80 space-y-1">
-                        <div className="flex justify-between items-center text-xs">
-                          <span className="font-semibold text-blue-400">@{note.author?.name || 'Desarrollador'}</span>
-                          <span className="text-[10px] text-neutral-500">{new Date(note.createdAt).toLocaleString()}</span>
+                    activeTask.notes.map((note: any, idx: number) => {
+                      const canDeleteNote = session?.user?.role === 'admin' || note.author?._id === session?.user?.id || note.author === session?.user?.id;
+
+                      return (
+                        <div key={note._id || idx} className="bg-neutral-950/40 p-3.5 rounded-xl border border-neutral-800/80 space-y-1 relative group">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="font-semibold text-blue-400">@{note.author?.name || 'Desarrollador'}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-neutral-500">{new Date(note.createdAt).toLocaleString()}</span>
+                              {canDeleteNote && (
+                                <button
+                                  onClick={() => handleDeleteNote(activeTask._id, note._id)}
+                                  className="text-neutral-500 hover:text-red-400 transition-colors p-0.5"
+                                  title="Eliminar nota"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <p className="text-sm text-neutral-300 whitespace-pre-wrap">{note.text}</p>
                         </div>
-                        <p className="text-sm text-neutral-300 whitespace-pre-wrap">{note.text}</p>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <p className="text-xs text-neutral-500 italic py-2">No hay notas registradas todavía.</p>
                   )}

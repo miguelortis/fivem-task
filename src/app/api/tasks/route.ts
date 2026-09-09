@@ -31,6 +31,7 @@ export async function GET(req: Request) {
       .populate("assignedTo", "name email")
       .populate("createdBy", "name")
       .populate("lastModifiedBy", "name")
+      .populate("assignedTo", "name email")
       .sort({ order: 1, createdAt: -1 }); // Primero por orden numérico, luego por fecha
 
     return NextResponse.json(tasks);
@@ -52,10 +53,13 @@ export async function POST(req: Request) {
 
     await connectDB();
 
-    // Si es admin y mandó un targetUserId, la tarea se crea para ese usuario. Si no, para el usuario actual.
-    const creatorId = (session.user.role === 'admin' && targetUserId) ? targetUserId : session.user.id;
-
     const totalTasks = await Task.countDocuments({ status: "todo" });
+
+    // Creador: Siempre el usuario logueado (ej: el Admin)
+    const creatorId = session.user.id;
+    
+    // Asignado: Si el admin está en el panel de otro dev (targetUserId), se le asigna a él. Si no, se auto-asigna.
+    const assignedId = (session.user.role === 'admin' && targetUserId) ? targetUserId : session.user.id;
 
     const newTask = await Task.create({
       title,
@@ -64,11 +68,14 @@ export async function POST(req: Request) {
       status: 'todo',
       order: totalTasks,
       createdBy: creatorId,
+      assignedTo: assignedId,
     });
 
     const populatedTask = await Task.findById(newTask._id)
       .populate("createdBy", "name email")
-      .populate("lastModifiedBy", "name email");
+      .populate("assignedTo", "name email")
+      .populate("lastModifiedBy", "name email")
+      .populate("assignedTo", "name email");
 
     return NextResponse.json(populatedTask, { status: 201 });
   } catch (error) {

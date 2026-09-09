@@ -29,8 +29,8 @@ const TaskSchema = new Schema(
     tags: [{ type: String }], // Ej: ['QBCore', 'UI', 'Vehículos']
     
     // Trazabilidad y Permisos
-    assignedTo: { type: Schema.Types.ObjectId, ref: 'User' },
-    createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    assignedTo: { type: Schema.Types.ObjectId, ref: "User", default: null },
     lastModifiedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     
     deadline: { type: Date },
