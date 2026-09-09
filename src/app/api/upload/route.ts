@@ -9,22 +9,22 @@ export async function POST(req: Request) {
     if (!session) return NextResponse.json({ message: "No autorizado" }, { status: 401 });
 
     const formData = await req.formData();
-    const file = formData.get("file") as File;
+    const files = formData.getAll("files") as File[];
 
-    if (!file) {
-      return NextResponse.json({ message: "No se proporcionó ningún archivo" }, { status: 400 });
+    if (!files || files.length === 0) {
+      return NextResponse.json({ message: "No se proporcionaron archivos" }, { status: 400 });
     }
 
-    const filename = `fivem-task-${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
-    
-    // Subir a Vercel Blob con acceso público
-    const blob = await put(filename, file, {
-      access: "public",
-    });
+    const uploadedUrls = [];
+    for (const file of files) {
+      const filename = `fivem-task-${Date.now()}-${Math.random().toString(36).substring(2, 7)}-${file.name.replace(/\s+/g, '-')}`;
+      const blob = await put(filename, file, { access: "public" });
+      uploadedUrls.push(blob.url);
+    }
 
-    return NextResponse.json(blob, { status: 200 });
+    return NextResponse.json({ urls: uploadedUrls }, { status: 200 });
   } catch (error) {
-    console.error("Error subiendo archivo a Blob:", error);
-    return NextResponse.json({ message: "Error al subir la imagen" }, { status: 500 });
+    console.error("Error subiendo archivos a Blob:", error);
+    return NextResponse.json({ message: "Error al subir las imágenes" }, { status: 500 });
   }
 }

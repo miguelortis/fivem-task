@@ -12,6 +12,7 @@ export type Author = {
 export type Note = {
     text: string; 
     author: Author;
+    images:string[];
     createdAt: string;
   }
 export type Task = {
@@ -23,7 +24,7 @@ export type Task = {
   status: TaskStatus;
   assignedTo?: { _id: string; name: string };
   createdBy?: { _id: string; name: string };
-  imageUrl?: string;
+  images?: string[];
 };
 
 type Columns = {

@@ -5,7 +5,7 @@ import { useSession, signOut } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { useTaskStore, Task, TaskType, TaskPriority } from '@/store/useTaskStore';
-import { Bug, Cpu, Wrench, Zap, Search, Plus, Trash2, LogOut, Shield, Layers, CheckCircle2, Clock, MessageSquare, X, Edit3, Send, UserCheck, Upload, ImageIcon, Maximize2 } from 'lucide-react';
+import { Bug, Cpu, Wrench, Zap, Search, Plus, Trash2, LogOut, Shield, Layers, CheckCircle2, Clock, MessageSquare, X, Edit3, Send, UserCheck, Upload, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { compressImage } from '@/lib/compressImage';
 
@@ -47,16 +47,18 @@ export default function KanbanBoard() {
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>('medium');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Estados para imágenes y lightbox
-  const [taskImageFile, setTaskImageFile] = useState<File | null>(null);
-  const [taskImagePreview, setTaskImagePreview] = useState<string | null>(null);
+  // Estados para múltiples imágenes
+  const [taskImageFiles, setTaskImageFiles] = useState<File[]>([]);
+  const [taskImagePreviews, setTaskImagePreviews] = useState<string[]>([]);
   const [isSubmittingTask, setIsSubmittingTask] = useState(false);
 
-  const [noteImageFile, setNoteImageFile] = useState<File | null>(null);
-  const [noteImagePreview, setNoteImagePreview] = useState<string | null>(null);
+  const [noteImageFiles, setNoteImageFiles] = useState<File[]>([]);
+  const [noteImagePreviews, setNoteImagePreviews] = useState<string[]>([]);
   const [isSubmittingNote, setIsSubmittingNote] = useState(false);
 
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  // Estados para el carrusel de vista previa
+  const [carouselImages, setCarouselImages] = useState<string[]>([]);
+  const [carouselIndex, setCarouselIndex] = useState(0);
 
   const [systemUsers, setSystemUsers] = useState<Array<{ _id: string; name: string; email: string }>>([]);
   const [transferTargetId, setTransferTargetId] = useState('');
@@ -166,50 +168,123 @@ export default function KanbanBoard() {
   const isSearching = searchTerm.trim().length > 0;
   const isDragDisabled = selectedUserFilter === 'all' || isSearching;
 
-  const handleFileSelected = async (file: File, type: 'task' | 'note') => {
-    if (!file.type.startsWith('image/')) {
-      alert('Por favor selecciona un archivo de imagen válido.');
-      return;
-    }
+  // Procesar múltiples archivos de imagen
+  const handleFilesSelected = async (files: FileList | File[], type: 'task' | 'note') => {
+    const validFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (validFiles.length === 0) return;
 
     try {
-      const compressed = await compressImage(file);
-      const previewUrl = URL.createObjectURL(compressed);
+      const compressedFiles = await Promise.all(validFiles.map(file => compressImage(file)));
+      const newPreviews = compressedFiles.map(file => URL.createObjectURL(file));
 
       if (type === 'task') {
-        setTaskImageFile(compressed);
-        setTaskImagePreview(previewUrl);
+        setTaskImageFiles(prev => [...prev, ...compressedFiles]);
+        setTaskImagePreviews(prev => [...prev, ...newPreviews]);
       } else {
-        setNoteImageFile(compressed);
-        setNoteImagePreview(previewUrl);
+        setNoteImageFiles(prev => [...prev, ...compressedFiles]);
+        setNoteImagePreviews(prev => [...prev, ...newPreviews]);
       }
     } catch (err) {
-      console.error("Error optimizando imagen:", err);
+      console.error("Error optimizando imágenes:", err);
     }
   };
 
-  const uploadImageToBlob = async (file: File): Promise<string | null> => {
+  const uploadImagesToBlob = async (files: File[]): Promise<string[]> => {
     const formData = new FormData();
-    formData.append('file', file);
+    files.forEach(file => formData.append('files', file));
 
     const res = await fetch('/api/upload', {
       method: 'POST',
       body: formData,
     });
 
-    if (!res.ok) throw new Error('Error al subir la imagen');
+    if (!res.ok) throw new Error('Error al subir las imágenes');
     const data = await res.json();
-    return data.url;
+    return data.urls; // Retorna arreglo de URLs
   };
 
-  // Función para eliminar la imagen principal de una tarea existente
-  const handleRemoveTaskImage = async (taskId: string) => {
+  const openCarousel = (images: string[], index: number) => {
+    setCarouselImages(images);
+    setCarouselIndex(index);
+  };
+
+  // Renderizador estilo WhatsApp para las miniaturas
+  const renderWhatsAppGrid = (images: string[]) => {
+    if (!images || images.length === 0) return null;
+
+    if (images.length === 1) {
+      return (
+        <div 
+          onClick={(e) => { e.stopPropagation(); openCarousel(images, 0); }}
+          className="mt-3 overflow-hidden rounded-lg border border-neutral-800 max-h-36 bg-neutral-950 relative group/img cursor-zoom-in"
+        >
+          <img src={images[0]} alt="Attachment" className="w-full h-full object-cover group-hover/img:scale-105 transition-transform" />
+          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
+            <Maximize2 size={15} className="text-white" />
+            <span className="text-[11px] font-medium text-white">Ampliar</span>
+          </div>
+        </div>
+      );
+    }
+
+    if (images.length === 2) {
+      return (
+        <div className="mt-3 grid grid-cols-2 gap-1.5 max-h-32 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
+          {images.map((url, i) => (
+            <div 
+              key={i} 
+              onClick={(e) => { e.stopPropagation(); openCarousel(images, i); }}
+              className="relative group/img cursor-zoom-in h-24 overflow-hidden"
+            >
+              <img src={url} alt={`Attachment ${i}`} className="w-full h-full object-cover group-hover/img:scale-105 transition-transform" />
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                <Maximize2 size={14} className="text-white" />
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // 3 o más fotos: Estilo WhatsApp (2 visibles, la segunda borrosa con contador +N)
+    const visibleImages = images.slice(0, 2);
+    const remainingCount = images.length - 2;
+
+    return (
+      <div className="mt-3 grid grid-cols-2 gap-1.5 max-h-32 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
+        {visibleImages.map((url, i) => {
+          const isLast = i === 1;
+          return (
+            <div 
+              key={i} 
+              onClick={(e) => { e.stopPropagation(); openCarousel(images, i); }}
+              className="relative group/img cursor-zoom-in h-24 overflow-hidden"
+            >
+              <img src={url} alt={`Attachment ${i}`} className={`w-full h-full object-cover group-hover/img:scale-105 transition-transform ${isLast && remainingCount > 0 ? 'filter blur-[3px]' : ''}`} />
+              
+              {isLast && remainingCount > 0 ? (
+                <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                  <span className="text-white font-bold text-base tracking-wider">+{remainingCount}</span>
+                </div>
+              ) : (
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                  <Maximize2 size={14} className="text-white" />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const handleRemoveTaskImage = async (taskId: string, imageUrl: string) => {
     if (!confirm('¿Estás seguro de eliminar esta imagen?')) return;
     try {
       const res = await fetch(`/api/tasks/${taskId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ removeImageUrl: true }),
+        body: JSON.stringify({ removeTaskImageUrl: imageUrl }),
       });
 
       if (res.ok) {
@@ -218,18 +293,17 @@ export default function KanbanBoard() {
         loadTasks();
       }
     } catch (error) {
-      console.error("Error eliminando imagen de la tarea:", error);
+      console.error("Error eliminando imagen:", error);
     }
   };
 
-  // Función para eliminar la imagen adjunta de una nota existente
-  const handleRemoveNoteImage = async (taskId: string, noteId: string) => {
+  const handleRemoveNoteImage = async (taskId: string, noteId: string, imageUrl: string) => {
     if (!confirm('¿Estás seguro de eliminar la imagen de esta nota?')) return;
     try {
       const res = await fetch(`/api/tasks/${taskId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ removeNoteImageId: noteId }),
+        body: JSON.stringify({ removeNoteImageUrl: { noteId, imageUrl } }),
       });
 
       if (res.ok) {
@@ -238,7 +312,7 @@ export default function KanbanBoard() {
         loadTasks();
       }
     } catch (error) {
-      console.error("Error eliminando imagen de la nota:", error);
+      console.error("Error eliminando imagen de nota:", error);
     }
   };
 
@@ -278,21 +352,21 @@ export default function KanbanBoard() {
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTaskTitle.trim() && !taskImageFile) return;
+    if (!newTaskTitle.trim() && taskImageFiles.length === 0) return;
 
     try {
       setIsSubmittingTask(true);
-      let uploadedImageUrl = null;
+      let uploadedUrls: string[] = [];
 
-      if (taskImageFile) {
-        uploadedImageUrl = await uploadImageToBlob(taskImageFile);
+      if (taskImageFiles.length > 0) {
+        uploadedUrls = await uploadImagesToBlob(taskImageFiles);
       }
 
       const payload: any = { 
-        title: newTaskTitle || 'Imagen adjunta', 
+        title: newTaskTitle || 'Imágenes adjuntas', 
         type: newTaskType, 
         priority: newTaskPriority,
-        imageUrl: uploadedImageUrl
+        images: uploadedUrls
       };
 
       if (userIdParam) {
@@ -309,8 +383,8 @@ export default function KanbanBoard() {
         const newTaskDB = await res.json();
         optimisticAdd(newTaskDB);
         setNewTaskTitle('');
-        setTaskImageFile(null);
-        setTaskImagePreview(null);
+        setTaskImageFiles([]);
+        setTaskImagePreviews([]);
         loadTasks();
       }
     } catch (error) {
@@ -335,22 +409,22 @@ export default function KanbanBoard() {
 
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!newNoteText.trim() && !noteImageFile) || !activeTask) return;
+    if ((!newNoteText.trim() && noteImageFiles.length === 0) || !activeTask) return;
 
     try {
       setIsSubmittingNote(true);
-      let uploadedImageUrl = null;
+      let uploadedUrls: string[] = [];
 
-      if (noteImageFile) {
-        uploadedImageUrl = await uploadImageToBlob(noteImageFile);
+      if (noteImageFiles.length > 0) {
+        uploadedUrls = await uploadImagesToBlob(noteImageFiles);
       }
 
       const res = await fetch(`/api/tasks/${activeTask._id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          newNote: newNoteText || 'Adjuntó una imagen', 
-          noteImageUrl: uploadedImageUrl 
+          newNote: newNoteText || 'Imágenes adjuntas', 
+          noteImages: uploadedUrls 
         }),
       });
 
@@ -358,8 +432,8 @@ export default function KanbanBoard() {
         const updated = await res.json();
         setActiveTask(updated);
         setNewNoteText('');
-        setNoteImageFile(null);
-        setNoteImagePreview(null);
+        setNoteImageFiles([]);
+        setNoteImagePreviews([]);
         loadTasks();
       }
     } catch (error) {
@@ -540,7 +614,7 @@ export default function KanbanBoard() {
             )}
           </div>
 
-          {/* FORMULARIO DE CREACIÓN DE TAREA */}
+          {/* FORMULARIO DE TAREA CON SOPORTE MÚLTIPLE DE IMÁGENES */}
           <form onSubmit={handleAddTask} className="lg:col-span-8 flex flex-col gap-2 bg-neutral-900/50 p-3 rounded-2xl border border-neutral-800/80">
             <div className="flex flex-col sm:flex-row gap-2">
               <input
@@ -549,8 +623,8 @@ export default function KanbanBoard() {
                 value={newTaskTitle}
                 onChange={(e) => setNewTaskTitle(e.target.value)}
                 onPaste={(e) => {
-                  const file = e.clipboardData.files?.[0];
-                  if (file) handleFileSelected(file, 'task');
+                  const files = e.clipboardData.files;
+                  if (files && files.length > 0) handleFilesSelected(files, 'task');
                 }}
                 className="bg-transparent px-4 py-2 text-sm text-neutral-200 placeholder:text-neutral-500 focus:outline-none flex-1"
               />
@@ -588,53 +662,57 @@ export default function KanbanBoard() {
               </div>
             </div>
 
-            {/* ZONA DE ARRASTRE / PEGADO DE IMAGEN EN TAREA */}
+            {/* ZONA DE MÚLTIPLES IMÁGENES */}
             <div 
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
-                if (e.dataTransfer.files?.[0]) handleFileSelected(e.dataTransfer.files[0], 'task');
+                if (e.dataTransfer.files) handleFilesSelected(e.dataTransfer.files, 'task');
               }}
               onPaste={(e) => {
-                const file = e.clipboardData.files?.[0];
-                if (file) handleFileSelected(file, 'task');
+                const files = e.clipboardData.files;
+                if (files && files.length > 0) handleFilesSelected(files, 'task');
               }}
-              className="border border-dashed border-neutral-800 hover:border-blue-500/40 rounded-xl px-3 py-1.5 text-center cursor-pointer bg-neutral-950/40 transition-colors flex items-center justify-between"
+              className="border border-dashed border-neutral-800 hover:border-blue-500/40 rounded-xl px-3 py-2 text-center cursor-pointer bg-neutral-950/40 transition-colors flex flex-col gap-2"
               onClick={() => document.getElementById('task-file-input')?.click()}
             >
               <input 
                 id="task-file-input" 
                 type="file" 
                 accept="image/*" 
+                multiple
                 className="hidden" 
                 onChange={(e) => {
-                  if (e.target.files?.[0]) handleFileSelected(e.target.files[0], 'task');
+                  if (e.target.files) handleFilesSelected(e.target.files, 'task');
                 }} 
               />
               
-              {taskImagePreview ? (
-                <div className="flex items-center justify-between gap-2 w-full py-0.5">
-                  <div className="flex items-center gap-2">
-                    <img 
-                      src={taskImagePreview} 
-                      alt="Preview" 
-                      onClick={(e) => { e.stopPropagation(); setPreviewImage(taskImagePreview); }}
-                      className="h-8 w-8 object-cover rounded-lg border border-neutral-700 cursor-zoom-in" 
-                    />
-                    <span className="text-[11px] text-emerald-400 font-medium">Captura lista para adjuntar</span>
+              {taskImagePreviews.length > 0 ? (
+                <div className="flex items-center justify-between gap-2 w-full flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {taskImagePreviews.map((preview, i) => (
+                      <img 
+                        key={i}
+                        src={preview} 
+                        alt="Preview" 
+                        onClick={(e) => { e.stopPropagation(); openCarousel(taskImagePreviews, i); }}
+                        className="h-9 w-9 object-cover rounded-lg border border-neutral-700 cursor-zoom-in" 
+                      />
+                    ))}
+                    <span className="text-[11px] text-emerald-400 font-medium">{taskImagePreviews.length} imágenes listas</span>
                   </div>
                   <button 
                     type="button" 
-                    onClick={(e) => { e.stopPropagation(); setTaskImageFile(null); setTaskImagePreview(null); }} 
+                    onClick={(e) => { e.stopPropagation(); setTaskImageFiles([]); setTaskImagePreviews([]); }} 
                     className="text-neutral-400 hover:text-red-400 text-xs px-2 py-1"
                   >
-                    Quitar
+                    Limpiar todo
                   </button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2 text-[11px] text-neutral-400 w-full justify-center">
                   <Upload size={13} className="text-blue-400" />
-                  <span>Adjuntar imagen (Arrastra, <strong>pega con Ctrl+V</strong> o haz clic)</span>
+                  <span>Adjuntar imágenes (Puedes seleccionar varias, arrastrar, <strong>pegar con Ctrl+V</strong> o hacer clic)</span>
                 </div>
               )}
             </div>
@@ -706,23 +784,8 @@ export default function KanbanBoard() {
                                     )}
                                   </div>
 
-                                  {/* MINIATURA EN TARJETA */}
-                                  {task.imageUrl && (
-                                    <div 
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setPreviewImage(task?.imageUrl || null);
-                                      }}
-                                      className="mt-3 overflow-hidden rounded-lg border border-neutral-800 max-h-36 bg-neutral-950 relative group/img cursor-zoom-in"
-                                      title="Ampliar imagen"
-                                    >
-                                      <img src={task.imageUrl} alt="Task attachment" className="w-full h-full object-cover group-hover/img:scale-105 transition-transform" />
-                                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
-                                        <Maximize2 size={15} className="text-white" />
-                                        <span className="text-[11px] font-medium text-white">Ampliar</span>
-                                      </div>
-                                    </div>
-                                  )}
+                                  {/* RENDERIZADOR ESTILO WHATSAPP PARA LAS IMÁGENES */}
+                                  {renderWhatsAppGrid(task.images || [])}
 
                                   <div className="mt-4 pt-3 border-t border-neutral-800/60 flex items-center justify-between">
                                     <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-medium ${typeData.color}`}>
@@ -780,24 +843,28 @@ export default function KanbanBoard() {
 
             <div className="p-6 overflow-y-auto space-y-6 flex-1">
               
-              {/* IMAGEN PRINCIPAL DE LA TAREA EN EL MODAL + BOTÓN DE ELIMINAR */}
-              {activeTask?.imageUrl && (
-                <div className="relative group/mainimg rounded-xl overflow-hidden border border-neutral-800 bg-neutral-950 max-h-60">
-                  <div 
-                    onClick={() => setPreviewImage(activeTask?.imageUrl || null)}
-                    className="w-full h-full cursor-zoom-in flex items-center justify-center"
-                    title="Ampliar imagen"
-                  >
-                    <img src={activeTask?.imageUrl} alt="Referencia de tarea" className="w-full h-full object-contain" />
-                  </div>
-                  <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover/mainimg:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => handleRemoveTaskImage(activeTask?._id)}
-                      className="bg-red-500/80 hover:bg-red-600 text-white p-2 rounded-lg backdrop-blur-sm transition-colors shadow-lg"
-                      title="Eliminar imagen de la tarea"
-                    >
-                      <Trash2 size={15} />
-                    </button>
+              {/* GALERÍA DE IMÁGENES PRINCIPALES DE LA TAREA EN EL MODAL */}
+              {activeTask?.images && activeTask?.images?.length > 0 && (
+                <div className="space-y-2">
+                  <span className="text-[11px] text-neutral-400 font-medium">Imágenes adjuntas a la tarea:</span>
+                  <div className="grid grid-cols-3 gap-2">
+                    {activeTask.images.map((imgUrl: string, idx: number) => (
+                      <div key={idx} className="relative group/modalimg rounded-xl overflow-hidden border border-neutral-800 bg-neutral-950 h-28">
+                        <img 
+                          src={imgUrl} 
+                          alt="Referencia" 
+                          onClick={() => openCarousel(activeTask?.images || [], idx)}
+                          className="w-full h-full object-cover cursor-zoom-in hover:scale-105 transition-transform" 
+                        />
+                        <button
+                          onClick={() => handleRemoveTaskImage(activeTask._id, imgUrl)}
+                          className="absolute top-2 right-2 bg-red-500/80 hover:bg-red-600 text-white p-1.5 rounded-lg opacity-0 group-hover/modalimg:opacity-100 transition-opacity shadow-lg"
+                          title="Eliminar imagen"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -933,25 +1000,26 @@ export default function KanbanBoard() {
                           
                           <p className="text-sm text-neutral-300 whitespace-pre-wrap">{note.text}</p>
 
-                          {/* IMAGEN ADJUNTA EN LA NOTA + BOTÓN DE ELIMINAR IMAGEN */}
-                          {note.imageUrl && (
-                            <div className="mt-2 rounded-lg overflow-hidden border border-neutral-800 max-h-40 bg-neutral-900 relative group/noteimg">
-                              <div 
-                                onClick={() => setPreviewImage(note.imageUrl)}
-                                className="w-full h-full cursor-zoom-in"
-                                title="Ampliar imagen"
-                              >
-                                <img src={note.imageUrl} alt="Nota adjunta" className="w-full h-full object-cover" />
-                              </div>
-                              <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/noteimg:opacity-100 transition-opacity">
-                                <button
-                                  onClick={() => handleRemoveNoteImage(activeTask._id, note._id)}
-                                  className="bg-red-500/80 hover:bg-red-600 text-white p-1.5 rounded-lg backdrop-blur-sm transition-colors shadow-lg"
-                                  title="Eliminar imagen de esta nota"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </div>
+                          {/* IMÁGENES ADJUNTAS EN LA NOTA */}
+                          {note.images && note.images.length > 0 && (
+                            <div className="mt-2 grid grid-cols-3 gap-2">
+                              {note.images.map((imgUrl: string, imgIdx: number) => (
+                                <div key={imgIdx} className="relative group/noteimg rounded-lg overflow-hidden border border-neutral-800 h-24 bg-neutral-900">
+                                  <img 
+                                    src={imgUrl} 
+                                    alt="Nota adjunta" 
+                                    onClick={() => openCarousel(note.images, imgIdx)}
+                                    className="w-full h-full object-cover cursor-zoom-in hover:scale-105 transition-transform" 
+                                  />
+                                  <button
+                                    onClick={() => handleRemoveNoteImage(activeTask._id, note._id, imgUrl)}
+                                    className="absolute top-1.5 right-1.5 bg-red-500/80 hover:bg-red-600 text-white p-1 rounded-md opacity-0 group-hover/noteimg:opacity-100 transition-opacity shadow-lg"
+                                    title="Eliminar imagen"
+                                  >
+                                    <Trash2 size={11} />
+                                  </button>
+                                </div>
+                              ))}
                             </div>
                           )}
                         </div>
@@ -962,7 +1030,7 @@ export default function KanbanBoard() {
                   )}
                 </div>
 
-                {/* FORMULARIO DE NOTAS */}
+                {/* FORMULARIO DE NOTAS CON SOPORTE MÚLTIPLE */}
                 <form onSubmit={handleAddNote} className="flex flex-col gap-2 pt-2">
                   <div className="flex gap-2">
                     <input
@@ -971,8 +1039,8 @@ export default function KanbanBoard() {
                       value={newNoteText}
                       onChange={(e) => setNewNoteText(e.target.value)}
                       onPaste={(e) => {
-                        const file = e.clipboardData.files?.[0];
-                        if (file) handleFileSelected(file, 'note');
+                        const files = e.clipboardData.files;
+                        if (files && files.length > 0) handleFilesSelected(files, 'note');
                       }}
                       className="flex-1 bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-neutral-500 focus:outline-none focus:border-blue-500"
                     />
@@ -985,53 +1053,57 @@ export default function KanbanBoard() {
                     </button>
                   </div>
 
-                  {/* ZONA DE ARRASTRE / PEGADO DE IMAGEN EN NOTA */}
+                  {/* ZONA DE MÚLTIPLES IMÁGENES EN NOTA */}
                   <div 
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => {
                       e.preventDefault();
-                      if (e.dataTransfer.files?.[0]) handleFileSelected(e.dataTransfer.files[0], 'note');
+                      if (e.dataTransfer.files) handleFilesSelected(e.dataTransfer.files, 'note');
                     }}
                     onPaste={(e) => {
-                      const file = e.clipboardData.files?.[0];
-                      if (file) handleFileSelected(file, 'note');
+                      const files = e.clipboardData.files;
+                      if (files && files.length > 0) handleFilesSelected(files, 'note');
                     }}
-                    className="border border-dashed border-neutral-800 hover:border-blue-500/40 rounded-xl px-3 py-1.5 text-center cursor-pointer bg-neutral-950/40 transition-colors flex items-center justify-between"
+                    className="border border-dashed border-neutral-800 hover:border-blue-500/40 rounded-xl px-3 py-2 text-center cursor-pointer bg-neutral-950/40 transition-colors flex flex-col gap-2"
                     onClick={() => document.getElementById('note-file-input')?.click()}
                   >
                     <input 
                       id="note-file-input" 
                       type="file" 
                       accept="image/*" 
+                      multiple
                       className="hidden" 
                       onChange={(e) => {
-                        if (e.target.files?.[0]) handleFileSelected(e.target.files[0], 'note');
+                        if (e.target.files) handleFilesSelected(e.target.files, 'note');
                       }} 
                     />
                     
-                    {noteImagePreview ? (
-                      <div className="flex items-center justify-between gap-2 w-full py-0.5">
-                        <div className="flex items-center gap-2">
-                          <img 
-                            src={noteImagePreview} 
-                            alt="Preview" 
-                            onClick={(e) => { e.stopPropagation(); setPreviewImage(noteImagePreview); }}
-                            className="h-8 w-8 object-cover rounded-lg border border-neutral-700 cursor-zoom-in" 
-                          />
-                          <span className="text-[11px] text-emerald-400 font-medium">Captura lista para la nota</span>
+                    {noteImagePreviews.length > 0 ? (
+                      <div className="flex items-center justify-between gap-2 w-full flex-wrap">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {noteImagePreviews.map((preview, i) => (
+                            <img 
+                              key={i}
+                              src={preview} 
+                              alt="Preview" 
+                              onClick={(e) => { e.stopPropagation(); openCarousel(noteImagePreviews, i); }}
+                              className="h-8 w-8 object-cover rounded-lg border border-neutral-700 cursor-zoom-in" 
+                            />
+                          ))}
+                          <span className="text-[11px] text-emerald-400 font-medium">{noteImagePreviews.length} imágenes listas para la nota</span>
                         </div>
                         <button 
                           type="button" 
-                          onClick={(e) => { e.stopPropagation(); setNoteImageFile(null); setNoteImagePreview(null); }} 
+                          onClick={(e) => { e.stopPropagation(); setNoteImageFiles([]); setNoteImagePreviews([]); }} 
                           className="text-neutral-400 hover:text-red-400 text-xs px-2 py-1"
                         >
-                          Quitar
+                          Limpiar
                         </button>
                       </div>
                     ) : (
                       <div className="flex items-center gap-2 text-[11px] text-neutral-400 w-full justify-center">
                         <Upload size={13} className="text-blue-400" />
-                        <span>Adjuntar imagen en la nota (Arrastra, <strong>pega con Ctrl+V</strong> o haz clic)</span>
+                        <span>Adjuntar imágenes en la nota (Arrastra, <strong>pega con Ctrl+V</strong> o haz clic)</span>
                       </div>
                     )}
                   </div>
@@ -1043,26 +1115,53 @@ export default function KanbanBoard() {
         </div>
       )}
 
-      {/* LIGHTBOX / MODAL DE VISTA PREVIA DE IMAGEN A PANTALLA COMPLETA */}
-      {previewImage && (
+      {/* MODAL DE CARRUSEL DE IMÁGENES CON FLECHAS */}
+      {carouselImages.length > 0 && (
         <div 
-          className="fixed inset-0 z-[70] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
-          onClick={() => setPreviewImage(null)}
+          className="fixed inset-0 z-[70] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setCarouselImages([])}
         >
-          <button 
-            onClick={() => setPreviewImage(null)}
-            className="absolute top-6 right-6 text-neutral-400 hover:text-white bg-neutral-900/80 hover:bg-neutral-800 p-2.5 rounded-full transition-colors z-10 border border-neutral-700 shadow-xl cursor-pointer"
-          >
-            <X size={20} />
-          </button>
-          
-          <div className="relative max-w-6xl max-h-[90vh] w-full h-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+          {/* Barra superior (Contador y Botón Cerrar) */}
+          <div className="absolute top-6 left-6 right-6 flex justify-between items-center z-20">
+            <span className="text-xs font-mono bg-neutral-900/80 border border-neutral-700 px-3 py-1.5 rounded-full text-neutral-300 shadow-xl">
+              {carouselIndex + 1} / {carouselImages.length}
+            </span>
+            <button 
+              onClick={() => setCarouselImages([])}
+              className="text-neutral-400 hover:text-white bg-neutral-900/80 hover:bg-neutral-800 p-2.5 rounded-full transition-colors z-10 border border-neutral-700 shadow-xl cursor-pointer"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          {/* Flecha Izquierda */}
+          {carouselImages.length > 1 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setCarouselIndex((prev) => (prev === 0 ? carouselImages.length - 1 : prev - 1)); }}
+              className="absolute left-6 text-white bg-neutral-900/80 hover:bg-neutral-800 p-3 rounded-full transition-colors z-20 border border-neutral-700 shadow-xl cursor-pointer"
+            >
+              <ChevronLeft size={24} />
+            </button>
+          )}
+
+          {/* Imagen Actual del Carrusel */}
+          <div className="relative max-w-6xl max-h-[85vh] w-full h-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
             <img 
-              src={previewImage} 
-              alt="Vista previa ampliada" 
+              src={carouselImages[carouselIndex]} 
+              alt={`Imagen ${carouselIndex + 1}`} 
               className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl border border-neutral-800" 
             />
           </div>
+
+          {/* Flecha Derecha */}
+          {carouselImages.length > 1 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setCarouselIndex((prev) => (prev === carouselImages.length - 1 ? 0 : prev + 1)); }}
+              className="absolute right-6 text-white bg-neutral-900/80 hover:bg-neutral-800 p-3 rounded-full transition-colors z-20 border border-neutral-700 shadow-xl cursor-pointer"
+            >
+              <ChevronRight size={24} />
+            </button>
+          )}
         </div>
       )}
 
