@@ -28,7 +28,28 @@ export default function TaskCard({
   const TypeIcon = typeData.icon;
   const priorityData = priorityConfig[task.priority];
 
-  // Renderizador de miniaturas estilo WhatsApp
+  // FUNCIÓN PARA RENDERIZAR LINKS EN EL TÍTULO
+  const renderTextWithLinks = (text: string) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    return text.split(urlRegex).map((part, i) => {
+      if (part.match(urlRegex)) {
+        return (
+          <a 
+            key={i} 
+            href={part} 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="text-blue-400 hover:underline break-all"
+            onClick={(e) => e.stopPropagation()} // Evita que se abra el modal de la tarea al hacer clic en el link
+          >
+            {part}
+          </a>
+        );
+      }
+      return part;
+    });
+  };
+
   const renderWhatsAppGrid = (images: string[]) => {
     if (!images || images.length === 0) return null;
 
@@ -98,9 +119,10 @@ export default function TaskCard({
           }`}
         >
           <div className="flex justify-between items-start gap-3">
-            <p className="text-sm font-medium text-neutral-100 leading-relaxed pr-6">{task.title}</p>
+            <p className="text-sm font-medium text-neutral-100 leading-relaxed pr-6 break-words">
+              {renderTextWithLinks(task.title)}
+            </p>
             
-            {/* MENÚ RÁPIDO DE LA TARJETA */}
             <div className="absolute top-3 right-3 flex items-center gap-1">
               <div className="relative">
                 <button

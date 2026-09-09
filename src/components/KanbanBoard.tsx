@@ -362,6 +362,7 @@ export default function KanbanBoard() {
           onClose={() => setActiveTask(null)} onTaskUpdated={(updated) => { setActiveTask(updated); loadTasks(); }}
           onOpenCarousel={(imgs, idx) => { setCarouselImages(imgs); setCarouselIndex(idx); }}
           onRemoveTaskImage={handleRemoveTaskImage} onRemoveNoteImage={handleRemoveNoteImage} onDeleteNote={handleDeleteNote}
+          onShowConfirm={(title, message, action) => setConfirmDialog({ isOpen: true, title, message, onConfirm: action })}
         />
       )}
 

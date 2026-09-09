@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Task, TaskType, TaskPriority } from '@/store/useTaskStore';
 import { X, Trash2, ImagePlus, Upload, Shield, Edit3, Send, MessageSquare } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm'; // PLUGIN PARA LINKS AUTOMÁTICOS EN NOTAS
 import { toast } from 'sonner';
 import { compressImage } from '@/lib/compressImage';
 
@@ -16,11 +17,12 @@ interface TaskModalProps {
   onRemoveTaskImage: (taskId: string, imgUrl: string) => void;
   onRemoveNoteImage: (taskId: string, noteId: string, imgUrl: string) => void;
   onDeleteNote: (taskId: string, noteId: string) => void;
+  onShowConfirm: (title: string, message: string, onConfirm: () => void) => void;
 }
 
 export default function TaskModal({
   task, session, systemUsers, typeConfig, onClose, onTaskUpdated,
-  onOpenCarousel, onRemoveTaskImage, onRemoveNoteImage, onDeleteNote
+  onOpenCarousel, onRemoveTaskImage, onRemoveNoteImage, onDeleteNote, onShowConfirm
 }: TaskModalProps) {
   
   const [isEditing, setIsEditing] = useState(false);
@@ -29,18 +31,26 @@ export default function TaskModal({
   const [editPriority, setEditPriority] = useState<TaskPriority>(task.priority);
   const [transferTargetId, setTransferTargetId] = useState('');
 
-  // Estados locales para subida de fotos extra
   const [extraFiles, setExtraFiles] = useState<File[]>([]);
   const [extraPreviews, setExtraPreviews] = useState<string[]>([]);
   const [isSubmittingExtra, setIsSubmittingExtra] = useState(false);
 
-  // Estados locales para notas
   const [newNoteText, setNewNoteText] = useState('');
   const [noteFiles, setNoteFiles] = useState<File[]>([]);
   const [notePreviews, setNotePreviews] = useState<string[]>([]);
   const [isSubmittingNote, setIsSubmittingNote] = useState(false);
 
-  // Función utilitaria interna para subir imágenes a Blob
+  // FUNCIÓN PARA LINKS EN EL TÍTULO
+  const renderTextWithLinks = (text: string) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    return text.split(urlRegex).map((part, i) => {
+      if (part.match(urlRegex)) {
+        return <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline break-all" onClick={(e) => e.stopPropagation()}>{part}</a>;
+      }
+      return part;
+    });
+  };
+
   const uploadImagesToBlob = async (files: File[]): Promise<string[]> => {
     const formData = new FormData();
     files.forEach(file => formData.append('files', file));
@@ -89,26 +99,32 @@ export default function TaskModal({
     }
   };
 
+  // NUEVO FLUJO DE TRANSFERENCIA (Reemplaza al `confirm()` nativo)
   const handleTransferTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!transferTargetId) return;
-    if (!confirm('¿Estás seguro de transferir esta tarea a otro usuario?')) return;
 
-    try {
-      const res = await fetch(`/api/tasks/${task._id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assignedTo: transferTargetId }),
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        onTaskUpdated(updated);
-        setTransferTargetId('');
-        toast.success("Tarea transferida exitosamente");
+    onShowConfirm(
+      'Transferir Tarea',
+      '¿Estás seguro de transferir la responsabilidad de esta tarea a otro usuario?',
+      async () => {
+        try {
+          const res = await fetch(`/api/tasks/${task._id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ assignedTo: transferTargetId }),
+          });
+          if (res.ok) {
+            const updated = await res.json();
+            onTaskUpdated(updated);
+            setTransferTargetId('');
+            toast.success("Tarea transferida exitosamente");
+          }
+        } catch (error) {
+          toast.error("Error transfiriendo tarea");
+        }
       }
-    } catch (error) {
-      toast.error("Error transfiriendo tarea");
-    }
+    );
   };
 
   const handleUploadExtraImages = async (e: React.FormEvent) => {
@@ -197,7 +213,7 @@ export default function TaskModal({
               <div className="grid grid-cols-3 gap-2">
                 {task.images.map((imgUrl: string, idx: number) => (
                   <div key={idx} className="relative group/modalimg rounded-xl overflow-hidden border border-neutral-800 bg-neutral-950 h-28">
-                    <img loading="lazy" src={imgUrl} alt="Referencia" onClick={() => onOpenCarousel(task?.images || [], idx)} className="w-full h-full object-cover cursor-zoom-in hover:scale-105 transition-transform" />
+                    <img loading="lazy" src={imgUrl} alt="Referencia" onClick={() => onOpenCarousel(task.images || [], idx)} className="w-full h-full object-cover cursor-zoom-in hover:scale-105 transition-transform" />
                     <button onClick={() => onRemoveTaskImage(task._id, imgUrl)} className="absolute top-2 right-2 bg-red-500/80 hover:bg-red-600 text-white p-1.5 rounded-lg opacity-0 group-hover/modalimg:opacity-100 transition-opacity shadow-lg">
                       <Trash2 size={13} />
                     </button>
@@ -239,7 +255,7 @@ export default function TaskModal({
             </div>
           </div>
 
-          {/* PANELES DE ADMIN (EDITAR / TRANSFERIR) */}
+          {/* PANELES DE ADMIN */}
           {session?.user?.role === 'admin' && (
             <div className="bg-neutral-950/60 p-4 rounded-xl border border-neutral-800 space-y-4">
               <div className="flex justify-between items-center">
@@ -288,10 +304,10 @@ export default function TaskModal({
             </div>
           )}
 
-          {/* VISTA DE SOLO LECTURA */}
+          {/* TÍTULO RENDERIZADO CON LINKS (SOLO LECTURA) */}
           {!isEditing && (
             <div>
-              <h2 className="text-xl font-bold text-white mb-2">{task.title}</h2>
+              <h2 className="text-xl font-bold text-white mb-2 break-words">{renderTextWithLinks(task.title)}</h2>
               <div className="flex gap-2 text-xs text-neutral-400">
                 <span>Prioridad: <strong className="text-neutral-200 capitalize">{task.priority}</strong></span>
                 <span>•</span>
@@ -326,8 +342,9 @@ export default function TaskModal({
                         </div>
                       </div>
                       
-                      <div className="text-sm text-neutral-300 whitespace-pre-wrap">
+                      <div className="text-sm text-neutral-300 whitespace-pre-wrap break-words">
                         <ReactMarkdown 
+                          remarkPlugins={[remarkGfm]} // <-- ACTIVADO EL SOPORTE PARA LINKS AUTOMÁTICOS
                           components={{
                             code({node, inline, className, children, ...props}: any) {
                               return !inline ? (
@@ -339,6 +356,10 @@ export default function TaskModal({
                                   {children}
                                 </code>
                               )
+                            },
+                            // RENDERIZADO PERSONALIZADO DE ENLACES PARA ABRIR EN PESTAÑA NUEVA
+                            a({node, ...props}: any) {
+                              return <a {...props} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline break-all" onClick={(e) => e.stopPropagation()} />
                             }
                           }}
                         >
@@ -370,7 +391,7 @@ export default function TaskModal({
               <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="Escribe una nota o pega código entre ``` ... ```"
+                  placeholder="Escribe una nota, añade links, emojis 🔥 o código entre ``` ... ```"
                   value={newNoteText}
                   onChange={(e) => setNewNoteText(e.target.value)}
                   onPaste={(e) => { const files = e.clipboardData.files; if (files && files.length > 0) handleFilesSelected(files, 'note'); }}
