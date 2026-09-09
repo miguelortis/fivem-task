@@ -127,11 +127,18 @@ export default function KanbanBoard() {
         setIsLoading(false);
       });
 
-    if (session?.user?.role === 'admin') {
+    if (session?.user?.role === 'admin' && session?.user?.id) {
       fetch('/api/admin/users')
         .then(res => res.json())
         .then(data => {
-          if (Array.isArray(data)) setSystemUsers(data);
+          if (Array.isArray(data)) {
+            const currentUserAsDev = {
+              _id: session.user.id,
+              name: `${session.user.name} (Tú)`,
+              email: session.user.email || ''
+            };
+            setSystemUsers([currentUserAsDev, ...data]);
+          }
         })
         .catch(err => console.error("Error cargando usuarios:", err));
     }
