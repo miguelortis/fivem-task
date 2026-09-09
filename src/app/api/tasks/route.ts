@@ -46,32 +46,33 @@ export async function POST(req: Request) {
     if (!session) return NextResponse.json({ message: "No autorizado" }, { status: 401 });
 
     const body = await req.json();
-    const { title, description, type, priority, assignedTo, tags, deadline } = body;
+    const { title, type, priority, targetUserId } = body;
+
+    if (!title) return NextResponse.json({ message: "El título es obligatorio" }, { status: 400 });
 
     await connectDB();
 
+    // Si es admin y mandó un targetUserId, la tarea se crea para ese usuario. Si no, para el usuario actual.
+    const creatorId = (session.user.role === 'admin' && targetUserId) ? targetUserId : session.user.id;
+
     const totalTasks = await Task.countDocuments({ status: "todo" });
-    
+
     const newTask = await Task.create({
       title,
-      description,
-      type,
-      priority,
-      tags,
-      assignedTo: assignedTo || null,
-      createdBy: session.user.id, // Se registra quién la creó automáticamente
-      deadline: deadline ? new Date(deadline) : null,
-      status: "todo", // Por defecto caen en "Por Hacer"
+      type: type || 'feature',
+      priority: priority || 'medium',
+      status: 'todo',
       order: totalTasks,
+      createdBy: creatorId,
     });
 
-    // Hacemos populate para devolver la tarea con el nombre del creador/asignado
     const populatedTask = await Task.findById(newTask._id)
-      .populate("assignedTo", "name")
-      .populate("createdBy", "name");
+      .populate("createdBy", "name email")
+      .populate("lastModifiedBy", "name email");
 
     return NextResponse.json(populatedTask, { status: 201 });
   } catch (error) {
+    console.error("Error creando tarea:", error);
     return NextResponse.json({ message: "Error al crear tarea" }, { status: 500 });
   }
 }

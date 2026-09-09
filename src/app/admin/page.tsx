@@ -144,7 +144,7 @@ export default function AdminDashboard() {
                         )}
 
                         <Link 
-                          href={`/dashboard?dev=${encodeURIComponent(user.name)}`}
+                          href={`/dashboard?userId=${user._id}&dev=${encodeURIComponent(user.name)}`}
                           className="px-3 py-1.5 bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 rounded-lg transition-colors border border-purple-500/30 text-xs font-medium inline-flex items-center gap-1"
                         >
                           Administrar

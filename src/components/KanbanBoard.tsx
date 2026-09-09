@@ -32,6 +32,7 @@ const priorityConfig: Record<TaskPriority, { label: string; class: string }> = {
 export default function KanbanBoard() {
   const { data: session, status } = useSession();
   const searchParams = useSearchParams();
+  const userIdParam = searchParams.get('userId');
   const devParam = searchParams.get('dev');
 
   const { columns, setTasksFromDB, optimisticMove, optimisticAdd, optimisticDelete } = useTaskStore();
@@ -43,7 +44,9 @@ export default function KanbanBoard() {
   const [newTaskType, setNewTaskType] = useState<TaskType>('feature');
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>('medium');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedUserFilter, setSelectedUserFilter] = useState(devParam || 'all');
+  
+  // Por defecto, si hay parámetro de URL usamos ese ID. Si no, filtramos por "my" (mis tareas)
+  const [selectedUserFilter, setSelectedUserFilter] = useState(userIdParam || 'my');
 
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [newNoteText, setNewNoteText] = useState('');
@@ -52,32 +55,54 @@ export default function KanbanBoard() {
   const [editType, setEditType] = useState<TaskType>('feature');
   const [editPriority, setEditPriority] = useState<TaskPriority>('medium');
 
-  // Actualizar filtro si cambia el parámetro de la URL
   useEffect(() => {
-    if (devParam) setSelectedUserFilter(devParam);
-  }, [devParam]);
+    if (userIdParam) setSelectedUserFilter(userIdParam);
+  }, [userIdParam]);
 
+  // Lista única de creadores para el selector del dropdown
+  const allTasksList = [...columns.todo, ...columns.inProgress, ...columns.done];
+  const uniqueCreators = Array.from(
+    new Map(
+      allTasksList
+        .filter(t => t.createdBy?._id && t.createdBy?.name)
+        .map(t => [t?.createdBy?._id, t?.createdBy?.name])
+    ).entries()
+  ).map(([id, name]) => ({ id, name }));
+
+  // Lógica de Filtrado Inteligente
   const filteredColumns = {
     todo: columns.todo.filter(t => {
       const matchSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchUser = selectedUserFilter === 'all' || t.createdBy?.name === selectedUserFilter;
+      let matchUser = true;
+      if (selectedUserFilter === 'my') {
+        matchUser = t.createdBy?._id === session?.user?.id;
+      } else if (selectedUserFilter !== 'all') {
+        matchUser = t.createdBy?._id === selectedUserFilter;
+      }
       return matchSearch && matchUser;
     }),
     inProgress: columns.inProgress.filter(t => {
       const matchSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchUser = selectedUserFilter === 'all' || t.createdBy?.name === selectedUserFilter;
+      let matchUser = true;
+      if (selectedUserFilter === 'my') {
+        matchUser = t.createdBy?._id === session?.user?.id;
+      } else if (selectedUserFilter !== 'all') {
+        matchUser = t.createdBy?._id === selectedUserFilter;
+      }
       return matchSearch && matchUser;
     }),
     done: columns.done.filter(t => {
       const matchSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchUser = selectedUserFilter === 'all' || t.createdBy?.name === selectedUserFilter;
+      let matchUser = true;
+      if (selectedUserFilter === 'my') {
+        matchUser = t.createdBy?._id === session?.user?.id;
+      } else if (selectedUserFilter !== 'all') {
+        matchUser = t.createdBy?._id === selectedUserFilter;
+      }
       return matchSearch && matchUser;
     }),
   };
-  const isSearching = searchTerm.trim().length > 0 || selectedUserFilter !== 'all';
-
-  const allTasksList = [...columns.todo, ...columns.inProgress, ...columns.done];
-  const uniqueCreators = Array.from(new Set(allTasksList.map(t => t.createdBy?.name).filter(Boolean)));
+  const isSearching = searchTerm.trim().length > 0 || selectedUserFilter !== 'my';
 
   useEffect(() => {
     setIsMounted(true);
@@ -135,15 +160,21 @@ export default function KanbanBoard() {
     if (!newTaskTitle.trim()) return;
 
     try {
+      const payload: any = { 
+        title: newTaskTitle, 
+        type: newTaskType, 
+        priority: newTaskPriority 
+      };
+
+      // Si estás administrando a un usuario específico, enviamos su ID para que la tarea se cree para él
+      if (userIdParam) {
+        payload.targetUserId = userIdParam;
+      }
+
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          title: newTaskTitle, 
-          type: newTaskType, 
-          priority: newTaskPriority,
-          // Si estás filtrando a un usuario específico y eres admin, la tarea se crea a su nombre o se le asigna
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (res.ok) {
@@ -281,10 +312,10 @@ export default function KanbanBoard() {
         <div className="bg-purple-600/10 border-b border-purple-500/20 px-6 py-2.5">
           <div className="max-w-7xl mx-auto flex items-center justify-between text-xs">
             <span className="flex items-center gap-2 text-purple-300 font-medium">
-              <UserCheck size={15} /> Administrando el espacio de trabajo de: <strong className="text-white underline">{devParam}</strong>
+              <UserCheck size={15} /> Administrando el panel de: <strong className="text-white underline">{devParam}</strong> (Las tareas que crees aquí se le asignarán directamente).
             </span>
             <Link href="/dashboard" className="text-neutral-400 hover:text-white underline transition-colors">
-              Ver todas las tareas generales
+              Volver a mis tareas generales
             </Link>
           </div>
         </div>
@@ -312,9 +343,10 @@ export default function KanbanBoard() {
               onChange={(e) => setSelectedUserFilter(e.target.value)}
               className="bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2.5 text-xs text-neutral-300 focus:outline-none cursor-pointer"
             >
-              <option value="all">Todos los Devs</option>
-              {uniqueCreators.map((name, i) => (
-                <option key={i} value={name}>{name}</option>
+              <option value="my">Mis Tareas</option>
+              <option value="all">Todas (Global)</option>
+              {uniqueCreators.map((dev) => (
+                <option key={dev.id} value={dev.id}>Dev: {dev.name}</option>
               ))}
             </select>
           </div>
