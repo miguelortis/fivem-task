@@ -77,6 +77,29 @@ export default function KanbanBoard() {
   const [editType, setEditType] = useState<TaskType>('feature');
   const [editPriority, setEditPriority] = useState<TaskPriority>('medium');
 
+  // EFECTO GLOBAL: Cerrar modales y menús al presionar la tecla ESCAPE
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpenCardMenuId(null);
+        setActiveTask(null);
+        setCarouselImages([]);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // EFECTO GLOBAL: Cerrar el mini-menú al hacer clic fuera de él
+  useEffect(() => {
+    if (!openCardMenuId) return;
+    const handleClickOutside = () => {
+      setOpenCardMenuId(null);
+    };
+    window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
+  }, [openCardMenuId]);
+
   useEffect(() => {
     if (userIdParam) {
       setSelectedUserFilter(userIdParam);
@@ -215,7 +238,6 @@ export default function KanbanBoard() {
     setCarouselIndex(index);
   };
 
-  // Función para actualización rápida de estado o prioridad desde la tarjeta
   const handleQuickUpdate = async (taskId: string, updates: { status?: string; priority?: string }, e?: React.MouseEvent) => {
     e?.stopPropagation();
     setOpenCardMenuId(null);
