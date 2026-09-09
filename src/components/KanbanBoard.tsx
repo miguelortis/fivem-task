@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -35,11 +35,12 @@ export default function KanbanBoard() {
   const userIdParam = searchParams.get('userId');
   const devParam = searchParams.get('dev');
 
-  const { columns, setTasksFromDB, optimisticAdd, optimisticDelete } = useTaskStore();
+  const { columns, setTasksFromDB, optimisticMove, optimisticAdd, optimisticDelete } = useTaskStore();
   
   const [isMounted, setIsMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
+  const [rawTasks, setRawTasks] = useState<Task[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskType, setNewTaskType] = useState<TaskType>('feature');
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>('medium');
@@ -57,6 +58,7 @@ export default function KanbanBoard() {
   const [editType, setEditType] = useState<TaskType>('feature');
   const [editPriority, setEditPriority] = useState<TaskPriority>('medium');
 
+  // Sincronizar el filtro con el parámetro de la URL
   useEffect(() => {
     if (userIdParam) {
       setSelectedUserFilter(userIdParam);
@@ -65,49 +67,22 @@ export default function KanbanBoard() {
     }
   }, [userIdParam]);
 
-  const allTasksList = [...columns.todo, ...columns.inProgress, ...columns.done];
-  const uniqueCreators = Array.from(
-    new Map(
-      allTasksList
-        .filter(t => t.assignedTo?._id && t.assignedTo?.name)
-        .map(t => [t?.assignedTo?._id, t?.assignedTo?.name])
-    ).entries()
-  ).map(([id, name]) => ({ id, name }));
+  // Función para cargar las tareas del servidor
+  const loadTasks = useCallback(async () => {
+    try {
+      const res = await fetch('/api/tasks');
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setRawTasks(data);
+      }
+    } catch (err) {
+      console.error("Error cargando tareas:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
-  const filteredColumns = {
-    todo: columns.todo.filter(t => {
-      const matchSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase());
-      let matchUser = true;
-      if (selectedUserFilter === 'my') {
-        matchUser = t.assignedTo?._id === session?.user?.id || (!t.assignedTo && t.createdBy?._id === session?.user?.id);
-      } else if (selectedUserFilter !== 'all') {
-        matchUser = t.assignedTo?._id === selectedUserFilter;
-      }
-      return matchSearch && matchUser;
-    }),
-    inProgress: columns.inProgress.filter(t => {
-      const matchSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase());
-      let matchUser = true;
-      if (selectedUserFilter === 'my') {
-        matchUser = t.assignedTo?._id === session?.user?.id || (!t.assignedTo && t.createdBy?._id === session?.user?.id);
-      } else if (selectedUserFilter !== 'all') {
-        matchUser = t.assignedTo?._id === selectedUserFilter;
-      }
-      return matchSearch && matchUser;
-    }),
-    done: columns.done.filter(t => {
-      const matchSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase());
-      let matchUser = true;
-      if (selectedUserFilter === 'my') {
-        matchUser = t.assignedTo?._id === session?.user?.id || (!t.assignedTo && t.createdBy?._id === session?.user?.id);
-      } else if (selectedUserFilter !== 'all') {
-        matchUser = t.assignedTo?._id === selectedUserFilter;
-      }
-      return matchSearch && matchUser;
-    }),
-  };
-  const isSearching = searchTerm.trim().length > 0 || selectedUserFilter === 'all';
-
+  // Cargar tareas y usuarios al iniciar
   useEffect(() => {
     setIsMounted(true);
     if (status === 'loading') return;
@@ -116,16 +91,7 @@ export default function KanbanBoard() {
       return;
     }
 
-    fetch('/api/tasks')
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data)) setTasksFromDB(data);
-        setIsLoading(false);
-      })
-      .catch(err => {
-        console.error("Error cargando tareas:", err);
-        setIsLoading(false);
-      });
+    loadTasks();
 
     if (session?.user?.role === 'admin' && session?.user?.id) {
       fetch('/api/admin/users')
@@ -142,69 +108,83 @@ export default function KanbanBoard() {
         })
         .catch(err => console.error("Error cargando usuarios:", err));
     }
-  }, [setTasksFromDB, status, session]);
+  }, [status, session, loadTasks]);
+
+  // Actualizar las columnas del store estrictamente según el usuario activo o vista seleccionada
+  useEffect(() => {
+    if (rawTasks.length === 0) {
+      setTasksFromDB([]);
+      return;
+    }
+
+    let filtered = rawTasks;
+    const activeUserId = userIdParam || (selectedUserFilter === 'my' ? session?.user?.id : selectedUserFilter);
+
+    if (activeUserId && activeUserId !== 'all') {
+      filtered = rawTasks.filter(t => {
+        const assignedId = typeof t.assignedTo === 'object' ? t.assignedTo?._id : t.assignedTo;
+        const creatorId = typeof t.createdBy === 'object' ? t.createdBy?._id : t.createdBy;
+        return assignedId === activeUserId || (!assignedId && creatorId === activeUserId);
+      });
+    }
+
+    setTasksFromDB(filtered);
+  }, [rawTasks, selectedUserFilter, userIdParam, session?.user?.id, setTasksFromDB]);
+
+  // Lista única de desarrolladores para el dropdown global
+  const uniqueCreators = Array.from(
+    new Map(
+      rawTasks
+        .filter(t => {
+          const u = t.assignedTo || t.createdBy;
+          const uId = typeof u === 'object' ? u?._id : u;
+          const uName = typeof u === 'object' ? u?.name : null;
+          return uId && uName;
+        })
+        .map(t => {
+          const u = t.assignedTo || t.createdBy;
+          const uId = typeof u === 'object' ? u._id : u;
+          const uName = typeof u === 'object' ? u.name : 'Desconocido';
+          return [uId, uName];
+        })
+    ).entries()
+  ).map(([id, name]) => ({ id, name }));
+
+  // Filtrado secundario por texto (Buscador)
+  const filteredColumns = {
+    todo: columns.todo.filter(t => t.title.toLowerCase().includes(searchTerm.toLowerCase())),
+    inProgress: columns.inProgress.filter(t => t.title.toLowerCase().includes(searchTerm.toLowerCase())),
+    done: columns.done.filter(t => t.title.toLowerCase().includes(searchTerm.toLowerCase())),
+  };
+  
+  const isSearching = searchTerm.trim().length > 0;
+  const isDragDisabled = selectedUserFilter === 'all' || isSearching;
 
   const onDragEnd = async (result: DropResult) => {
     if (!result.destination) return;
     const { source, destination } = result;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+    if (isDragDisabled) return;
 
-    if (selectedUserFilter === 'all' || isSearching) return;
+    // 1. Movimiento instantáneo optimista en la tienda local
+    optimisticMove(
+      source.droppableId as keyof typeof columns,
+      destination.droppableId as keyof typeof columns,
+      source.index,
+      destination.index
+    );
 
-    const sourceColId = source.droppableId as keyof typeof columns;
-    const destColId = destination.droppableId as keyof typeof columns;
-    const activeUserId = selectedUserFilter === 'my' ? session?.user?.id : selectedUserFilter;
-
-    // 1. Obtener copias de las listas filtradas actuales
-    const sourceFiltered = [...filteredColumns[sourceColId]];
-    const destFiltered = sourceColId === destColId ? sourceFiltered : [...filteredColumns[destColId]];
-
-    // 2. Mover la tarjeta en el array filtrado
-    const [movedItem] = sourceFiltered.splice(source.index, 1);
-    movedItem.status = destColId;
-    destFiltered.splice(destination.index, 0, movedItem);
-
-    // 3. Reconstruir el estado global en el store preservando las tareas de los demás usuarios
-    const currentColumns = useTaskStore.getState().columns;
-    const newColumns = { ...currentColumns };
-
-    const affectedColIds = Array.from(new Set([sourceColId, destColId]));
-    affectedColIds.forEach((colId) => {
-      const globalColTasks = currentColumns[colId];
-      let activeUserIndex = 0;
-      
-      const updatedGlobalCol = globalColTasks.map(task => {
-        const taskUserId = task.assignedTo?._id || task.createdBy?._id;
-        if (taskUserId === activeUserId) {
-          const targetList = (sourceColId === destColId && colId === destColId) 
-            ? destFiltered 
-            : (colId === sourceColId ? sourceFiltered : destFiltered);
-          
-          const replacement = targetList[activeUserIndex];
-          activeUserIndex++;
-          return replacement || task;
-        }
-        return task;
-      });
-
-      newColumns[colId] = updatedGlobalCol;
-    });
-
-    // Actualizar store local instantáneamente
-    useTaskStore.setState({ columns: newColumns });
-
-    // 4. Preparar y enviar los datos SOLO de este usuario al backend
-    const finalDestTasks = newColumns[destColId].filter(t => {
-      const taskUserId = t.assignedTo?._id || t.createdBy?._id;
-      return taskUserId === activeUserId;
-    });
-
-    const reorderedItems = finalDestTasks.map((task, index) => ({
+    // 2. Extraer el nuevo orden de la columna de destino
+    const freshColumns = useTaskStore.getState().columns;
+    const destColumn = freshColumns[destination.droppableId as keyof typeof columns];
+    
+    const reorderedItems = destColumn.map((task, index) => ({
       _id: task._id,
-      status: destColId,
+      status: destination.droppableId,
       order: index
     }));
 
+    // 3. Guardar en el backend
     try {
       await fetch('/api/tasks/reorder', {
         method: 'PUT',
@@ -213,6 +193,7 @@ export default function KanbanBoard() {
       });
     } catch (error) {
       console.error("Error guardando orden:", error);
+      loadTasks(); // Revertir si falla
     }
   };
 
@@ -241,6 +222,7 @@ export default function KanbanBoard() {
         const newTaskDB = await res.json();
         optimisticAdd(newTaskDB);
         setNewTaskTitle('');
+        loadTasks();
       }
     } catch (error) {
       console.error("Error creando tarea:", error);
@@ -256,6 +238,7 @@ export default function KanbanBoard() {
       await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
     } catch (error) {
       console.error("Error eliminando tarea:", error);
+      loadTasks();
     }
   };
 
@@ -274,9 +257,7 @@ export default function KanbanBoard() {
         const updated = await res.json();
         setActiveTask(updated);
         setNewNoteText('');
-        const tasksRes = await fetch('/api/tasks');
-        const tasksData = await tasksRes.json();
-        if (Array.isArray(tasksData)) setTasksFromDB(tasksData);
+        loadTasks();
       }
     } catch (error) {
       console.error("Error enviando nota:", error);
@@ -295,9 +276,7 @@ export default function KanbanBoard() {
       if (res.ok) {
         const updated = await res.json();
         setActiveTask(updated);
-        const tasksRes = await fetch('/api/tasks');
-        const tasksData = await tasksRes.json();
-        if (Array.isArray(tasksData)) setTasksFromDB(tasksData);
+        loadTasks();
       }
     } catch (error) {
       console.error("Error eliminando nota:", error);
@@ -319,9 +298,7 @@ export default function KanbanBoard() {
         const updated = await res.json();
         setActiveTask(updated);
         setIsEditing(false);
-        const tasksRes = await fetch('/api/tasks');
-        const tasksData = await tasksRes.json();
-        if (Array.isArray(tasksData)) setTasksFromDB(tasksData);
+        loadTasks();
       }
     } catch (error) {
       console.error("Error editando tarea:", error);
@@ -344,9 +321,7 @@ export default function KanbanBoard() {
         const updated = await res.json();
         setActiveTask(updated);
         setTransferTargetId('');
-        const tasksRes = await fetch('/api/tasks');
-        const tasksData = await tasksRes.json();
-        if (Array.isArray(tasksData)) setTasksFromDB(tasksData);
+        loadTasks();
         alert('¡Tarea transferida exitosamente!');
       }
     } catch (error) {
@@ -541,7 +516,7 @@ export default function KanbanBoard() {
                               key={task._id} 
                               draggableId={task._id} 
                               index={index}
-                              isDragDisabled={selectedUserFilter === 'all'}
+                              isDragDisabled={isDragDisabled}
                             >
                               {(provided, snapshot) => (
                                 <div
@@ -581,7 +556,7 @@ export default function KanbanBoard() {
                                       )}
                                       {task.assignedTo && (
                                         <span className="text-[11px] text-blue-400/90 font-medium bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
-                                          @{task.assignedTo.name.split(' ')[0]}
+                                          @{typeof task.assignedTo === 'object' ? task.assignedTo.name.split(' ')[0] : 'Dev'}
                                         </span>
                                       )}
                                     </div>
@@ -613,7 +588,7 @@ export default function KanbanBoard() {
                   {typeConfig[activeTask.type]?.label || 'Tarea'}
                 </span>
                 <span className="text-xs text-neutral-400">
-                  Asignado a: <strong className="text-blue-300">@{activeTask.assignedTo?.name || 'Nadie'}</strong>
+                  Asignado a: <strong className="text-blue-300">@{typeof activeTask.assignedTo === 'object' ? activeTask.assignedTo?.name : 'Desconocido'}</strong>
                 </span>
               </div>
               <button onClick={() => setActiveTask(null)} className="text-neutral-400 hover:text-white p-1 rounded-lg hover:bg-neutral-800">
@@ -730,12 +705,13 @@ export default function KanbanBoard() {
                 <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
                   {activeTask.notes && activeTask.notes.length > 0 ? (
                     activeTask.notes.map((note: any, idx: number) => {
-                      const canDeleteNote = session?.user?.role === 'admin' || note.author?._id === session?.user?.id || note.author === session?.user?.id;
+                      const noteAuthorId = typeof note.author === 'object' ? note.author?._id : note.author;
+                      const canDeleteNote = session?.user?.role === 'admin' || noteAuthorId === session?.user?.id;
 
                       return (
                         <div key={note._id || idx} className="bg-neutral-950/40 p-3.5 rounded-xl border border-neutral-800/80 space-y-1 relative group">
                           <div className="flex justify-between items-center text-xs">
-                            <span className="font-semibold text-blue-400">@{note.author?.name || 'Desarrollador'}</span>
+                            <span className="font-semibold text-blue-400">@{typeof note.author === 'object' ? note.author?.name : 'Desarrollador'}</span>
                             <div className="flex items-center gap-2">
                               <span className="text-[10px] text-neutral-500">{new Date(note.createdAt).toLocaleString()}</span>
                               {canDeleteNote && (
