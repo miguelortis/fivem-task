@@ -47,7 +47,7 @@ export default function KanbanBoard() {
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>('medium');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Estados para imágenes y el visor Lightbox
+  // Estados para imágenes y lightbox
   const [taskImageFile, setTaskImageFile] = useState<File | null>(null);
   const [taskImagePreview, setTaskImagePreview] = useState<string | null>(null);
   const [isSubmittingTask, setIsSubmittingTask] = useState(false);
@@ -56,7 +56,7 @@ export default function KanbanBoard() {
   const [noteImagePreview, setNoteImagePreview] = useState<string | null>(null);
   const [isSubmittingNote, setIsSubmittingNote] = useState(false);
 
-  const [previewImage, setPreviewImage] = useState<string | null>(null); // <-- Estado para el visor de imagen ampliada
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const [systemUsers, setSystemUsers] = useState<Array<{ _id: string; name: string; email: string }>>([]);
   const [transferTargetId, setTransferTargetId] = useState('');
@@ -200,6 +200,46 @@ export default function KanbanBoard() {
     if (!res.ok) throw new Error('Error al subir la imagen');
     const data = await res.json();
     return data.url;
+  };
+
+  // Función para eliminar la imagen principal de una tarea existente
+  const handleRemoveTaskImage = async (taskId: string) => {
+    if (!confirm('¿Estás seguro de eliminar esta imagen?')) return;
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ removeImageUrl: true }),
+      });
+
+      if (res.ok) {
+        const updated = await res.json();
+        setActiveTask(updated);
+        loadTasks();
+      }
+    } catch (error) {
+      console.error("Error eliminando imagen de la tarea:", error);
+    }
+  };
+
+  // Función para eliminar la imagen adjunta de una nota existente
+  const handleRemoveNoteImage = async (taskId: string, noteId: string) => {
+    if (!confirm('¿Estás seguro de eliminar la imagen de esta nota?')) return;
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ removeNoteImageId: noteId }),
+      });
+
+      if (res.ok) {
+        const updated = await res.json();
+        setActiveTask(updated);
+        loadTasks();
+      }
+    } catch (error) {
+      console.error("Error eliminando imagen de la nota:", error);
+    }
   };
 
   const onDragEnd = async (result: DropResult) => {
@@ -666,7 +706,7 @@ export default function KanbanBoard() {
                                     )}
                                   </div>
 
-                                  {/* MINIATURA EN TARJETA - CLIC PARA ABRIR LIGHTBOX SIN ABRIR EL MODAL DE TAREA */}
+                                  {/* MINIATURA EN TARJETA */}
                                   {task.imageUrl && (
                                     <div 
                                       onClick={(e) => {
@@ -740,17 +780,24 @@ export default function KanbanBoard() {
 
             <div className="p-6 overflow-y-auto space-y-6 flex-1">
               
-              {/* IMAGEN PRINCIPAL DE LA TAREA EN EL MODAL (CLIC PARA AMPLIAR) */}
-              {activeTask.imageUrl && (
-                <div 
-                  onClick={() => setPreviewImage(activeTask?.imageUrl || null)}
-                  className="rounded-xl overflow-hidden border border-neutral-800 bg-neutral-950 max-h-60 relative group/img cursor-zoom-in"
-                  title="Ampliar imagen"
-                >
-                  <img src={activeTask.imageUrl} alt="Referencia de tarea" className="w-full h-full object-contain" />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
-                    <Maximize2 size={16} className="text-white" />
-                    <span className="text-xs font-medium text-white">Ampliar imagen</span>
+              {/* IMAGEN PRINCIPAL DE LA TAREA EN EL MODAL + BOTÓN DE ELIMINAR */}
+              {activeTask?.imageUrl && (
+                <div className="relative group/mainimg rounded-xl overflow-hidden border border-neutral-800 bg-neutral-950 max-h-60">
+                  <div 
+                    onClick={() => setPreviewImage(activeTask?.imageUrl || null)}
+                    className="w-full h-full cursor-zoom-in flex items-center justify-center"
+                    title="Ampliar imagen"
+                  >
+                    <img src={activeTask?.imageUrl} alt="Referencia de tarea" className="w-full h-full object-contain" />
+                  </div>
+                  <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover/mainimg:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => handleRemoveTaskImage(activeTask?._id)}
+                      className="bg-red-500/80 hover:bg-red-600 text-white p-2 rounded-lg backdrop-blur-sm transition-colors shadow-lg"
+                      title="Eliminar imagen de la tarea"
+                    >
+                      <Trash2 size={15} />
+                    </button>
                   </div>
                 </div>
               )}
@@ -886,17 +933,24 @@ export default function KanbanBoard() {
                           
                           <p className="text-sm text-neutral-300 whitespace-pre-wrap">{note.text}</p>
 
-                          {/* IMAGEN ADJUNTA EN LA NOTA (CLIC PARA AMPLIAR) */}
+                          {/* IMAGEN ADJUNTA EN LA NOTA + BOTÓN DE ELIMINAR IMAGEN */}
                           {note.imageUrl && (
-                            <div 
-                              onClick={() => setPreviewImage(note.imageUrl)}
-                              className="mt-2 rounded-lg overflow-hidden border border-neutral-800 max-h-40 bg-neutral-900 relative group/img cursor-zoom-in"
-                              title="Ampliar imagen"
-                            >
-                              <img src={note.imageUrl} alt="Nota adjunta" className="w-full h-full object-cover group-hover/img:scale-105 transition-transform" />
-                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
-                                <Maximize2 size={14} className="text-white" />
-                                <span className="text-[11px] font-medium text-white">Ampliar</span>
+                            <div className="mt-2 rounded-lg overflow-hidden border border-neutral-800 max-h-40 bg-neutral-900 relative group/noteimg">
+                              <div 
+                                onClick={() => setPreviewImage(note.imageUrl)}
+                                className="w-full h-full cursor-zoom-in"
+                                title="Ampliar imagen"
+                              >
+                                <img src={note.imageUrl} alt="Nota adjunta" className="w-full h-full object-cover" />
+                              </div>
+                              <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/noteimg:opacity-100 transition-opacity">
+                                <button
+                                  onClick={() => handleRemoveNoteImage(activeTask._id, note._id)}
+                                  className="bg-red-500/80 hover:bg-red-600 text-white p-1.5 rounded-lg backdrop-blur-sm transition-colors shadow-lg"
+                                  title="Eliminar imagen de esta nota"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
                               </div>
                             </div>
                           )}
