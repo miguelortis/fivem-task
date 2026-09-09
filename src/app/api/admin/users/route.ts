@@ -8,15 +8,16 @@ export async function GET() {
   try {
     const session = await getServerSession(authOptions);
 
-    // Verificamos que esté logueado y sea admin
     if (!session || session.user.role !== "admin") {
       return NextResponse.json({ message: "Acceso denegado" }, { status: 403 });
     }
 
     await connectDB();
 
-    // Traemos todos los usuarios sin mostrar las contraseñas
-    const users = await User.find({}).select("-password").sort({ createdAt: -1 });
+    // Traemos a todos los usuarios EXCEPTO al administrador que ha iniciado sesión
+    const users = await User.find({ _id: { $ne: session.user.id } })
+      .select("-password")
+      .sort({ createdAt: -1 });
 
     return NextResponse.json(users);
   } catch (error) {
