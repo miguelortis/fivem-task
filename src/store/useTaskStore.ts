@@ -23,6 +23,7 @@ export type Task = {
   status: TaskStatus;
   assignedTo?: { _id: string; name: string };
   createdBy?: { _id: string; name: string };
+  imageUrl?: string;
 };
 
 type Columns = {

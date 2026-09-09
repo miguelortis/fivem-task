@@ -5,8 +5,9 @@ import { useSession, signOut } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { useTaskStore, Task, TaskType, TaskPriority } from '@/store/useTaskStore';
-import { Bug, Cpu, Wrench, Zap, Search, Plus, Trash2, LogOut, Shield, Layers, CheckCircle2, Clock, MessageSquare, X, Edit3, Send, UserCheck } from 'lucide-react';
+import { Bug, Cpu, Wrench, Zap, Search, Plus, Trash2, LogOut, Shield, Layers, CheckCircle2, Clock, MessageSquare, X, Edit3, Send, UserCheck, Upload, ImageIcon } from 'lucide-react';
 import Link from 'next/link';
+import { compressImage } from '@/lib/compressImage';
 
 const columnConfig = {
   todo: { title: 'Por Hacer', icon: Clock, color: 'text-amber-400', border: 'border-amber-500/20' },
@@ -46,6 +47,15 @@ export default function KanbanBoard() {
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>('medium');
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Estados para imágenes en tareas y notas
+  const [taskImageFile, setTaskImageFile] = useState<File | null>(null);
+  const [taskImagePreview, setTaskImagePreview] = useState<string | null>(null);
+  const [isSubmittingTask, setIsSubmittingTask] = useState(false);
+
+  const [noteImageFile, setNoteImageFile] = useState<File | null>(null);
+  const [noteImagePreview, setNoteImagePreview] = useState<string | null>(null);
+  const [isSubmittingNote, setIsSubmittingNote] = useState(false);
+
   const [systemUsers, setSystemUsers] = useState<Array<{ _id: string; name: string; email: string }>>([]);
   const [transferTargetId, setTransferTargetId] = useState('');
   
@@ -58,7 +68,6 @@ export default function KanbanBoard() {
   const [editType, setEditType] = useState<TaskType>('feature');
   const [editPriority, setEditPriority] = useState<TaskPriority>('medium');
 
-  // Sincronizar el filtro con el parámetro de la URL
   useEffect(() => {
     if (userIdParam) {
       setSelectedUserFilter(userIdParam);
@@ -67,7 +76,6 @@ export default function KanbanBoard() {
     }
   }, [userIdParam]);
 
-  // Función para cargar las tareas del servidor
   const loadTasks = useCallback(async () => {
     try {
       const res = await fetch('/api/tasks');
@@ -82,7 +90,6 @@ export default function KanbanBoard() {
     }
   }, []);
 
-  // Cargar tareas y usuarios al iniciar
   useEffect(() => {
     setIsMounted(true);
     if (status === 'loading') return;
@@ -110,7 +117,6 @@ export default function KanbanBoard() {
     }
   }, [status, session, loadTasks]);
 
-  // Actualizar las columnas del store estrictamente según el usuario activo o vista seleccionada
   useEffect(() => {
     if (rawTasks.length === 0) {
       setTasksFromDB([]);
@@ -131,7 +137,6 @@ export default function KanbanBoard() {
     setTasksFromDB(filtered);
   }, [rawTasks, selectedUserFilter, userIdParam, session?.user?.id, setTasksFromDB]);
 
-  // Lista única de desarrolladores para el dropdown global
   const uniqueCreators = Array.from(
     new Map(
       rawTasks
@@ -150,7 +155,6 @@ export default function KanbanBoard() {
     ).entries()
   ).map(([id, name]) => ({ id, name }));
 
-  // Filtrado secundario por texto (Buscador)
   const filteredColumns = {
     todo: columns.todo.filter(t => t.title.toLowerCase().includes(searchTerm.toLowerCase())),
     inProgress: columns.inProgress.filter(t => t.title.toLowerCase().includes(searchTerm.toLowerCase())),
@@ -160,13 +164,50 @@ export default function KanbanBoard() {
   const isSearching = searchTerm.trim().length > 0;
   const isDragDisabled = selectedUserFilter === 'all' || isSearching;
 
+  // Manejador centralizado para comprimir y previsualizar archivos de imagen
+  const handleFileSelected = async (file: File, type: 'task' | 'note') => {
+    if (!file.type.startsWith('image/')) {
+      alert('Por favor selecciona un archivo de imagen válido.');
+      return;
+    }
+
+    try {
+      const compressed = await compressImage(file);
+      const previewUrl = URL.createObjectURL(compressed);
+
+      if (type === 'task') {
+        setTaskImageFile(compressed);
+        setTaskImagePreview(previewUrl);
+      } else {
+        setNoteImageFile(compressed);
+        setNoteImagePreview(previewUrl);
+      }
+    } catch (err) {
+      console.error("Error optimizando imagen:", err);
+    }
+  };
+
+  // Subir imagen a Vercel Blob
+  const uploadImageToBlob = async (file: File): Promise<string | null> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const res = await fetch('/api/upload', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!res.ok) throw new Error('Error al subir la imagen');
+    const data = await res.json();
+    return data.url;
+  };
+
   const onDragEnd = async (result: DropResult) => {
     if (!result.destination) return;
     const { source, destination } = result;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
     if (isDragDisabled) return;
 
-    // 1. Movimiento instantáneo optimista en la tienda local
     optimisticMove(
       source.droppableId as keyof typeof columns,
       destination.droppableId as keyof typeof columns,
@@ -174,7 +215,6 @@ export default function KanbanBoard() {
       destination.index
     );
 
-    // 2. Extraer el nuevo orden de la columna de destino
     const freshColumns = useTaskStore.getState().columns;
     const destColumn = freshColumns[destination.droppableId as keyof typeof columns];
     
@@ -184,7 +224,6 @@ export default function KanbanBoard() {
       order: index
     }));
 
-    // 3. Guardar en el backend
     try {
       await fetch('/api/tasks/reorder', {
         method: 'PUT',
@@ -193,19 +232,27 @@ export default function KanbanBoard() {
       });
     } catch (error) {
       console.error("Error guardando orden:", error);
-      loadTasks(); // Revertir si falla
+      loadTasks();
     }
   };
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTaskTitle.trim()) return;
+    if (!newTaskTitle.trim() && !taskImageFile) return;
 
     try {
+      setIsSubmittingTask(true);
+      let uploadedImageUrl = null;
+
+      if (taskImageFile) {
+        uploadedImageUrl = await uploadImageToBlob(taskImageFile);
+      }
+
       const payload: any = { 
-        title: newTaskTitle, 
+        title: newTaskTitle || 'Imagen adjunta', 
         type: newTaskType, 
-        priority: newTaskPriority 
+        priority: newTaskPriority,
+        imageUrl: uploadedImageUrl
       };
 
       if (userIdParam) {
@@ -222,10 +269,14 @@ export default function KanbanBoard() {
         const newTaskDB = await res.json();
         optimisticAdd(newTaskDB);
         setNewTaskTitle('');
+        setTaskImageFile(null);
+        setTaskImagePreview(null);
         loadTasks();
       }
     } catch (error) {
       console.error("Error creando tarea:", error);
+    } finally {
+      setIsSubmittingTask(false);
     }
   };
 
@@ -244,23 +295,37 @@ export default function KanbanBoard() {
 
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newNoteText.trim() || !activeTask) return;
+    if ((!newNoteText.trim() && !noteImageFile) || !activeTask) return;
 
     try {
+      setIsSubmittingNote(true);
+      let uploadedImageUrl = null;
+
+      if (noteImageFile) {
+        uploadedImageUrl = await uploadImageToBlob(noteImageFile);
+      }
+
       const res = await fetch(`/api/tasks/${activeTask._id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newNote: newNoteText }),
+        body: JSON.stringify({ 
+          newNote: newNoteText || 'Adjuntó una imagen', 
+          noteImageUrl: uploadedImageUrl 
+        }),
       });
 
       if (res.ok) {
         const updated = await res.json();
         setActiveTask(updated);
         setNewNoteText('');
+        setNoteImageFile(null);
+        setNoteImagePreview(null);
         loadTasks();
       }
     } catch (error) {
       console.error("Error enviando nota:", error);
+    } finally {
+      setIsSubmittingNote(false);
     }
   };
 
@@ -435,44 +500,98 @@ export default function KanbanBoard() {
             )}
           </div>
 
-          <form onSubmit={handleAddTask} className="lg:col-span-8 flex flex-col sm:flex-row gap-2 bg-neutral-900/50 p-1.5 rounded-2xl border border-neutral-800/80">
-            <input
-              type="text"
-              placeholder={devParam ? `Crear tarea para ${devParam}...` : "¿Qué tarea nueva hay que hacer?"}
-              value={newTaskTitle}
-              onChange={(e) => setNewTaskTitle(e.target.value)}
-              className="bg-transparent px-4 py-2 text-sm text-neutral-200 placeholder:text-neutral-500 focus:outline-none flex-1"
-            />
-            <div className="flex items-center gap-2 px-2 sm:px-0">
-              <select
-                value={newTaskType}
-                onChange={(e) => setNewTaskType(e.target.value as TaskType)}
-                className="bg-neutral-950/80 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-neutral-300 focus:outline-none cursor-pointer"
-              >
-                <option value="feature">Script</option>
-                <option value="bug">Bug</option>
-                <option value="tweak">Mod</option>
-                <option value="optimization">Optimización</option>
-                <option value="research">Investigación</option>
-              </select>
+          {/* FORMULARIO DE CREACIÓN DE TAREA CON SOPORTE DE IMAGEN (DRAG, PASTE, CLICK) */}
+          <form onSubmit={handleAddTask} className="lg:col-span-8 flex flex-col gap-2 bg-neutral-900/50 p-3 rounded-2xl border border-neutral-800/80">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                placeholder={devParam ? `Crear tarea para ${devParam}...` : "¿Qué tarea nueva hay que hacer?"}
+                value={newTaskTitle}
+                onChange={(e) => setNewTaskTitle(e.target.value)}
+                onPaste={(e) => {
+                  const file = e.clipboardData.files?.[0];
+                  if (file) handleFileSelected(file, 'task');
+                }}
+                className="bg-transparent px-4 py-2 text-sm text-neutral-200 placeholder:text-neutral-500 focus:outline-none flex-1"
+              />
+              <div className="flex items-center gap-2 px-2 sm:px-0">
+                <select
+                  value={newTaskType}
+                  onChange={(e) => setNewTaskType(e.target.value as TaskType)}
+                  className="bg-neutral-950/80 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-neutral-300 focus:outline-none cursor-pointer"
+                >
+                  <option value="feature">Script</option>
+                  <option value="bug">Bug</option>
+                  <option value="tweak">Mod</option>
+                  <option value="optimization">Optimización</option>
+                  <option value="research">Investigación</option>
+                </select>
 
-              <select
-                value={newTaskPriority}
-                onChange={(e) => setNewTaskPriority(e.target.value as TaskPriority)}
-                className="bg-neutral-950/80 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-neutral-300 focus:outline-none cursor-pointer"
-              >
-                <option value="low">Baja</option>
-                <option value="medium">Media</option>
-                <option value="high">Alta</option>
-                <option value="critical">Crítico</option>
-              </select>
+                <select
+                  value={newTaskPriority}
+                  onChange={(e) => setNewTaskPriority(e.target.value as TaskPriority)}
+                  className="bg-neutral-950/80 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-neutral-300 focus:outline-none cursor-pointer"
+                >
+                  <option value="low">Baja</option>
+                  <option value="medium">Media</option>
+                  <option value="high">Alta</option>
+                  <option value="critical">Crítico</option>
+                </select>
 
-              <button
-                type="submit"
-                className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl transition-all font-medium text-xs flex items-center gap-1.5 shadow-lg shadow-blue-600/20 shrink-0"
-              >
-                <Plus size={15} /> Crear
-              </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingTask}
+                  className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-2 rounded-xl transition-all font-medium text-xs flex items-center gap-1.5 shadow-lg shadow-blue-600/20 shrink-0"
+                >
+                  <Plus size={15} /> {isSubmittingTask ? 'Guardando...' : 'Crear'}
+                </button>
+              </div>
+            </div>
+
+            {/* ZONA DE ARRASTRE / PEGADO DE IMAGEN EN TAREA */}
+            <div 
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (e.dataTransfer.files?.[0]) handleFileSelected(e.dataTransfer.files[0], 'task');
+              }}
+              onPaste={(e) => {
+                const file = e.clipboardData.files?.[0];
+                if (file) handleFileSelected(file, 'task');
+              }}
+              className="border border-dashed border-neutral-800 hover:border-blue-500/40 rounded-xl px-3 py-1.5 text-center cursor-pointer bg-neutral-950/40 transition-colors flex items-center justify-between"
+              onClick={() => document.getElementById('task-file-input')?.click()}
+            >
+              <input 
+                id="task-file-input" 
+                type="file" 
+                accept="image/*" 
+                className="hidden" 
+                onChange={(e) => {
+                  if (e.target.files?.[0]) handleFileSelected(e.target.files[0], 'task');
+                }} 
+              />
+              
+              {taskImagePreview ? (
+                <div className="flex items-center justify-between gap-2 w-full py-0.5">
+                  <div className="flex items-center gap-2">
+                    <img src={taskImagePreview} alt="Preview" className="h-8 w-8 object-cover rounded-lg border border-neutral-700" />
+                    <span className="text-[11px] text-emerald-400 font-medium">Captura lista para adjuntar</span>
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={(e) => { e.stopPropagation(); setTaskImageFile(null); setTaskImagePreview(null); }} 
+                    className="text-neutral-400 hover:text-red-400 text-xs px-2 py-1"
+                  >
+                    Quitar
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-[11px] text-neutral-400 w-full justify-center">
+                  <Upload size={13} className="text-blue-400" />
+                  <span>Adjuntar imagen (Arrastra, <strong>pega con Ctrl+V</strong> o haz clic)</span>
+                </div>
+              )}
             </div>
           </form>
 
@@ -542,6 +661,13 @@ export default function KanbanBoard() {
                                     )}
                                   </div>
 
+                                  {/* PREVIEW DE IMAGEN EN LA TARJETA SI LA TIENE */}
+                                  {task.imageUrl && (
+                                    <div className="mt-3 overflow-hidden rounded-lg border border-neutral-800 max-h-36 bg-neutral-950">
+                                      <img src={task.imageUrl} alt="Task attachment" className="w-full h-full object-cover hover:scale-105 transition-transform" />
+                                    </div>
+                                  )}
+
                                   <div className="mt-4 pt-3 border-t border-neutral-800/60 flex items-center justify-between">
                                     <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-medium ${typeData.color}`}>
                                       <TypeIcon size={12} />
@@ -598,6 +724,15 @@ export default function KanbanBoard() {
 
             <div className="p-6 overflow-y-auto space-y-6 flex-1">
               
+              {/* IMAGEN PRINCIPAL DE LA TAREA EN EL MODAL */}
+              {activeTask.imageUrl && (
+                <div className="rounded-xl overflow-hidden border border-neutral-800 bg-neutral-950 max-h-60">
+                  <a href={activeTask.imageUrl} target="_blank" rel="noopener noreferrer">
+                    <img src={activeTask.imageUrl} alt="Referencia de tarea" className="w-full h-full object-contain" />
+                  </a>
+                </div>
+              )}
+
               {session?.user?.role === 'admin' && (
                 <div className="bg-neutral-950/60 p-4 rounded-xl border border-neutral-800 space-y-4">
                   <div className="flex justify-between items-center">
@@ -697,6 +832,7 @@ export default function KanbanBoard() {
                 </div>
               )}
 
+              {/* SECCIÓN DE NOTAS Y BITÁCORA */}
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold text-neutral-300 flex items-center gap-2">
                   <MessageSquare size={16} className="text-blue-400" /> Notas y Bitácora de Actividad
@@ -709,7 +845,7 @@ export default function KanbanBoard() {
                       const canDeleteNote = session?.user?.role === 'admin' || noteAuthorId === session?.user?.id;
 
                       return (
-                        <div key={note._id || idx} className="bg-neutral-950/40 p-3.5 rounded-xl border border-neutral-800/80 space-y-1 relative group">
+                        <div key={note._id || idx} className="bg-neutral-950/40 p-3.5 rounded-xl border border-neutral-800/80 space-y-2 relative group">
                           <div className="flex justify-between items-center text-xs">
                             <span className="font-semibold text-blue-400">@{typeof note.author === 'object' ? note.author?.name : 'Desarrollador'}</span>
                             <div className="flex items-center gap-2">
@@ -725,7 +861,17 @@ export default function KanbanBoard() {
                               )}
                             </div>
                           </div>
+                          
                           <p className="text-sm text-neutral-300 whitespace-pre-wrap">{note.text}</p>
+
+                          {/* IMAGEN ADJUNTA EN LA NOTA */}
+                          {note.imageUrl && (
+                            <div className="mt-2 rounded-lg overflow-hidden border border-neutral-800 max-h-40 bg-neutral-900">
+                              <a href={note.imageUrl} target="_blank" rel="noopener noreferrer">
+                                <img src={note.imageUrl} alt="Nota adjunta" className="w-full h-full object-cover" />
+                              </a>
+                            </div>
+                          )}
                         </div>
                       );
                     })
@@ -734,20 +880,74 @@ export default function KanbanBoard() {
                   )}
                 </div>
 
-                <form onSubmit={handleAddNote} className="flex gap-2 pt-2">
-                  <input
-                    type="text"
-                    placeholder="Escribe una nota o actualización..."
-                    value={newNoteText}
-                    onChange={(e) => setNewNoteText(e.target.value)}
-                    className="flex-1 bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-neutral-500 focus:outline-none focus:border-blue-500"
-                  />
-                  <button
-                    type="submit"
-                    className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 text-sm font-medium shadow-lg shadow-blue-600/20 shrink-0"
+                {/* FORMULARIO DE NOTAS CON SOPORTE DE IMAGEN (DRAG, PASTE, CLICK) */}
+                <form onSubmit={handleAddNote} className="flex flex-col gap-2 pt-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Escribe una nota o actualización..."
+                      value={newNoteText}
+                      onChange={(e) => setNewNoteText(e.target.value)}
+                      onPaste={(e) => {
+                        const file = e.clipboardData.files?.[0];
+                        if (file) handleFileSelected(file, 'note');
+                      }}
+                      className="flex-1 bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-neutral-500 focus:outline-none focus:border-blue-500"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isSubmittingNote}
+                      className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 text-sm font-medium shadow-lg shadow-blue-600/20 shrink-0"
+                    >
+                      <Send size={15} /> {isSubmittingNote ? 'Enviando...' : 'Enviar'}
+                    </button>
+                  </div>
+
+                  {/* ZONA DE ARRASTRE / PEGADO DE IMAGEN EN NOTA */}
+                  <div 
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (e.dataTransfer.files?.[0]) handleFileSelected(e.dataTransfer.files[0], 'note');
+                    }}
+                    onPaste={(e) => {
+                      const file = e.clipboardData.files?.[0];
+                      if (file) handleFileSelected(file, 'note');
+                    }}
+                    className="border border-dashed border-neutral-800 hover:border-blue-500/40 rounded-xl px-3 py-1.5 text-center cursor-pointer bg-neutral-950/40 transition-colors flex items-center justify-between"
+                    onClick={() => document.getElementById('note-file-input')?.click()}
                   >
-                    <Send size={15} /> Enviar
-                  </button>
+                    <input 
+                      id="note-file-input" 
+                      type="file" 
+                      accept="image/*" 
+                      className="hidden" 
+                      onChange={(e) => {
+                        if (e.target.files?.[0]) handleFileSelected(e.target.files[0], 'note');
+                      }} 
+                    />
+                    
+                    {noteImagePreview ? (
+                      <div className="flex items-center justify-between gap-2 w-full py-0.5">
+                        <div className="flex items-center gap-2">
+                          <img src={noteImagePreview} alt="Preview" className="h-8 w-8 object-cover rounded-lg border border-neutral-700" />
+                          <span className="text-[11px] text-emerald-400 font-medium">Captura lista para la nota</span>
+                        </div>
+                        <button 
+                          type="button" 
+                          onClick={(e) => { e.stopPropagation(); setNoteImageFile(null); setNoteImagePreview(null); }} 
+                          className="text-neutral-400 hover:text-red-400 text-xs px-2 py-1"
+                        >
+                          Quitar
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-[11px] text-neutral-400 w-full justify-center">
+                        <Upload size={13} className="text-blue-400" />
+                        <span>Adjuntar imagen en la nota (Arrastra, <strong>pega con Ctrl+V</strong> o haz clic)</span>
+                      </div>
+                    )}
+                  </div>
                 </form>
               </div>
 

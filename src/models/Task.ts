@@ -3,6 +3,7 @@ import mongoose, { Schema, models } from 'mongoose';
 const NoteSchema = new Schema({
   text: { type: String, required: true }, // Soportará Markdown en el frontend
   author: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  imageUrl: { type: String, default: null },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -32,7 +33,7 @@ const TaskSchema = new Schema(
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     assignedTo: { type: Schema.Types.ObjectId, ref: "User", default: null },
     lastModifiedBy: { type: Schema.Types.ObjectId, ref: 'User' },
-    
+    imageUrl: { type: String, default: null },
     deadline: { type: Date },
     notes: [NoteSchema] // Historial de comentarios
   },

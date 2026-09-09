@@ -47,7 +47,7 @@ export async function POST(req: Request) {
     if (!session) return NextResponse.json({ message: "No autorizado" }, { status: 401 });
 
     const body = await req.json();
-    const { title, type, priority, targetUserId } = body;
+    const { title, type, priority, targetUserId,imageUrl } = body;
 
     if (!title) return NextResponse.json({ message: "El título es obligatorio" }, { status: 400 });
 
@@ -69,6 +69,7 @@ export async function POST(req: Request) {
       order: totalTasks,
       createdBy: creatorId,
       assignedTo: assignedId,
+      imageUrl: imageUrl || null,
     });
 
     const populatedTask = await Task.findById(newTask._id)

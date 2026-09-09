@@ -12,7 +12,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     const { id } = await params;
     const body = await req.json();
-    const { status, newNote, deleteNoteId, assignedTo, priority, title, type } = body;
+    const { status, newNote, noteImageUrl, deleteNoteId, assignedTo, priority, title, type } = body;
 
     await connectDB();
     const task = await Task.findById(id);
@@ -74,6 +74,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         notes: {
           text: newNote,
           author: session.user.id,
+          imageUrl: noteImageUrl || null,
           createdAt: new Date()
         }
       };
