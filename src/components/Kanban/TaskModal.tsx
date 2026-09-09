@@ -446,7 +446,7 @@ export default function TaskModal({
                     onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(!showEmojiPicker); }}
                     className="p-2.5 text-neutral-500 hover:text-amber-400 transition-colors"
                   >
-                    <Smile size="{18}"/>
+                    <Smile size={18}/>
                   </button>
                 </div>
 
@@ -457,7 +457,7 @@ export default function TaskModal({
                 )}
 
                 <button type="submit" disabled={isSubmittingNote} className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 rounded-xl transition-colors flex items-center gap-1.5 text-sm font-medium">
-                  <Send size="{15}"/> {isSubmittingNote ? '...' : 'Enviar'}
+                  <Send size={15}/> {isSubmittingNote ? '...' : 'Enviar'}
                 </button>
               </div>
 
@@ -477,7 +477,7 @@ export default function TaskModal({
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 text-[11px] text-neutral-400 justify-center">
-                    <Upload className="text-blue-400" size="{13}"/> <span>Adjuntar imágenes en la nota (Arrastra o <strong>pega con Ctrl+V</strong>)</span>
+                    <Upload className="text-blue-400" size={13}/> <span>Adjuntar imágenes en la nota (Arrastra o <strong>pega con Ctrl+V</strong>)</span>
                   </div>
                 )}
               </div>

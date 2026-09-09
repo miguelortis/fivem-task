@@ -134,7 +134,7 @@ export default function CreateTaskForm({ devParam, userIdParam, onSuccess }: Cre
             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
             className="p-2.5 text-neutral-500 hover:text-amber-400 transition-colors"
           >
-            <Smile size="{18}"/>
+            <Smile size={18}/>
           </button>
         </div>
 
@@ -155,7 +155,7 @@ export default function CreateTaskForm({ devParam, userIdParam, onSuccess }: Cre
           </select>
 
           <button type="submit" disabled={isSubmittingTask} className="h-[42px] bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 rounded-xl transition-all font-medium text-xs flex items-center gap-1.5 shadow-lg shadow-blue-600/20 shrink-0">
-            <Plus size="{15}"/> {isSubmittingTask ? '...' : 'Crear'}
+            <Plus size={15}/> {isSubmittingTask ? '...' : 'Crear'}
           </button>
         </div>
       </div>
@@ -180,7 +180,7 @@ export default function CreateTaskForm({ devParam, userIdParam, onSuccess }: Cre
           </div>
         ) : (
           <div className="flex items-center gap-2 text-[11px] text-neutral-400 w-full justify-center">
-            <Upload className="text-blue-400" size="{13}"/>
+            <Upload className="text-blue-400" size={13}/>
             <span>Adjuntar imágenes (Puedes seleccionar varias, arrastrar o hacer clic)</span>
           </div>
         )}
