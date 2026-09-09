@@ -56,7 +56,11 @@ export default function KanbanBoard() {
   const [editPriority, setEditPriority] = useState<TaskPriority>('medium');
 
   useEffect(() => {
-    if (userIdParam) setSelectedUserFilter(userIdParam);
+    if (userIdParam) {
+      setSelectedUserFilter(userIdParam);
+    } else {
+      setSelectedUserFilter('my'); // Vuelve a "Mis Tareas" por defecto al salir
+    }
   }, [userIdParam]);
 
   // Lista única de creadores para el selector del dropdown
@@ -331,24 +335,27 @@ export default function KanbanBoard() {
               <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500" />
               <input
                 type="text"
-                placeholder="Buscar tarea..."
+                placeholder={devParam ? `Buscar tareas de ${devParam}...` : "Buscar tarea..."}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full bg-neutral-900/80 border border-neutral-800/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus:border-blue-500/50"
               />
             </div>
 
-            <select
-              value={selectedUserFilter}
-              onChange={(e) => setSelectedUserFilter(e.target.value)}
-              className="bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2.5 text-xs text-neutral-300 focus:outline-none cursor-pointer"
-            >
-              <option value="my">Mis Tareas</option>
-              <option value="all">Todas (Global)</option>
-              {uniqueCreators.map((dev) => (
-                <option key={dev.id} value={dev.id}>Dev: {dev.name}</option>
-              ))}
-            </select>
+            {/* EL SELECTOR SOLO APARECE SI NO ESTÁS ADMINISTRANDO A UN USUARIO ESPECÍFICO */}
+            {!userIdParam && (
+              <select
+                value={selectedUserFilter}
+                onChange={(e) => setSelectedUserFilter(e.target.value)}
+                className="bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2.5 text-xs text-neutral-300 focus:outline-none cursor-pointer"
+              >
+                <option value="my">Mis Tareas</option>
+                <option value="all">Todas (Global)</option>
+                {uniqueCreators.map((dev) => (
+                  <option key={dev.id} value={dev.id}>Dev: {dev.name}</option>
+                ))}
+              </select>
+            )}
           </div>
 
           <form onSubmit={handleAddTask} className="lg:col-span-8 flex flex-col sm:flex-row gap-2 bg-neutral-900/50 p-1.5 rounded-2xl border border-neutral-800/80">
