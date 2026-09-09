@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { del } from "@vercel/blob"; // <-- ESTA IMPORTACIÓN ES LA QUE SOLUCIONA EL ERROR
 import connectDB from "@/lib/mongodb";
 import Task from "@/models/Task";
 
@@ -32,7 +33,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ message: "Tarea no encontrada" }, { status: 404 });
     }
 
-    // 1. Eliminar una nota específica
+    // 1. Eliminar una nota completa (y su imagen adjunta si la tenía en Blob)
     if (deleteNoteId) {
       const noteObj = task.notes.id(deleteNoteId);
       if (!noteObj) return NextResponse.json({ message: "Nota no encontrada" }, { status: 404 });
@@ -40,6 +41,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       const isNoteAuthor = noteObj.author?.toString() === session.user.id;
       if (session.user.role !== "admin" && !isNoteAuthor) {
         return NextResponse.json({ message: "No autorizado" }, { status: 403 });
+      }
+
+      if (noteObj.imageUrl) {
+        try {
+          await del(noteObj.imageUrl);
+        } catch (err) {
+          console.error("Error borrando imagen de la nota en Blob:", err);
+        }
       }
 
       const updatedTask = await Task.findByIdAndUpdate(
@@ -57,8 +66,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json(updatedTask);
     }
 
-    // 2. Eliminar la imagen adjunta de una nota específica
+    // 2. Eliminar únicamente la imagen adjunta de una nota específica
     if (removeNoteImageId) {
+      const noteObj = task.notes.id(removeNoteImageId);
+      if (noteObj && noteObj.imageUrl) {
+        try {
+          await del(noteObj.imageUrl);
+        } catch (err) {
+          console.error("Error borrando imagen de nota en Blob:", err);
+        }
+      }
+
       const updatedTask = await Task.findOneAndUpdate(
         { _id: id, "notes._id": removeNoteImageId },
         { 
@@ -75,6 +93,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     // 3. Eliminar la imagen principal de la tarea
     if (removeImageUrl) {
+      if (task.imageUrl) {
+        try {
+          await del(task.imageUrl);
+        } catch (err) {
+          console.error("Error borrando imagen principal en Blob:", err);
+        }
+      }
+
       const updatedTask = await Task.findByIdAndUpdate(
         id,
         { $set: { imageUrl: null, lastModifiedBy: session.user.id } },
@@ -137,7 +163,21 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
 
     const { id } = await params;
     await connectDB();
-    await Task.findByIdAndDelete(id);
+    
+    const task = await Task.findById(id);
+    if (task) {
+      if (task.imageUrl) {
+        try { await del(task.imageUrl); } catch (e) { console.error(e); }
+      }
+      if (task.notes && task.notes.length > 0) {
+        for (const note of task.notes) {
+          if (note.imageUrl) {
+            try { await del(note.imageUrl); } catch (e) { console.error(e); }
+          }
+        }
+      }
+      await Task.findByIdAndDelete(id);
+    }
 
     return NextResponse.json({ message: "Tarea eliminada correctamente" });
   } catch (error) {
