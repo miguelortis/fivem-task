@@ -5,7 +5,7 @@ import { useSession, signOut } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { useTaskStore, Task, TaskType, TaskPriority } from '@/store/useTaskStore';
-import { Bug, Cpu, Wrench, Zap, Search, Plus, Trash2, LogOut, Shield, Layers, CheckCircle2, Clock, MessageSquare, X, Edit3, Send, UserCheck, Upload, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Bug, Cpu, Wrench, Zap, Search, Plus, Trash2, LogOut, Shield, Layers, CheckCircle2, Clock, MessageSquare, X, Edit3, Send, UserCheck, Upload, Maximize2, ChevronLeft, ChevronRight, ImagePlus } from 'lucide-react';
 import Link from 'next/link';
 import { compressImage } from '@/lib/compressImage';
 
@@ -47,16 +47,22 @@ export default function KanbanBoard() {
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>('medium');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Estados para múltiples imágenes
+  // Estados para múltiples imágenes en creación
   const [taskImageFiles, setTaskImageFiles] = useState<File[]>([]);
   const [taskImagePreviews, setTaskImagePreviews] = useState<string[]>([]);
   const [isSubmittingTask, setIsSubmittingTask] = useState(false);
 
+  // Estados para múltiples imágenes en notas
   const [noteImageFiles, setNoteImageFiles] = useState<File[]>([]);
   const [noteImagePreviews, setNoteImagePreviews] = useState<string[]>([]);
   const [isSubmittingNote, setIsSubmittingNote] = useState(false);
 
-  // Estados para el carrusel de vista previa
+  // Estados para agregar más imágenes a una tarea existente desde el modal
+  const [extraTaskImageFiles, setExtraTaskImageFiles] = useState<File[]>([]);
+  const [extraTaskImagePreviews, setExtraTaskImagePreviews] = useState<string[]>([]);
+  const [isSubmittingExtraImages, setIsSubmittingExtraImages] = useState(false);
+
+  // Estados para el carrusel
   const [carouselImages, setCarouselImages] = useState<string[]>([]);
   const [carouselIndex, setCarouselIndex] = useState(0);
 
@@ -168,8 +174,8 @@ export default function KanbanBoard() {
   const isSearching = searchTerm.trim().length > 0;
   const isDragDisabled = selectedUserFilter === 'all' || isSearching;
 
-  // Procesar múltiples archivos de imagen
-  const handleFilesSelected = async (files: FileList | File[], type: 'task' | 'note') => {
+  // Procesar archivos de imagen genéricos
+  const handleFilesSelected = async (files: FileList | File[], target: 'task' | 'note' | 'extra') => {
     const validFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
     if (validFiles.length === 0) return;
 
@@ -177,12 +183,15 @@ export default function KanbanBoard() {
       const compressedFiles = await Promise.all(validFiles.map(file => compressImage(file)));
       const newPreviews = compressedFiles.map(file => URL.createObjectURL(file));
 
-      if (type === 'task') {
+      if (target === 'task') {
         setTaskImageFiles(prev => [...prev, ...compressedFiles]);
         setTaskImagePreviews(prev => [...prev, ...newPreviews]);
-      } else {
+      } else if (target === 'note') {
         setNoteImageFiles(prev => [...prev, ...compressedFiles]);
         setNoteImagePreviews(prev => [...prev, ...newPreviews]);
+      } else if (target === 'extra') {
+        setExtraTaskImageFiles(prev => [...prev, ...compressedFiles]);
+        setExtraTaskImagePreviews(prev => [...prev, ...newPreviews]);
       }
     } catch (err) {
       console.error("Error optimizando imágenes:", err);
@@ -200,7 +209,7 @@ export default function KanbanBoard() {
 
     if (!res.ok) throw new Error('Error al subir las imágenes');
     const data = await res.json();
-    return data.urls; // Retorna arreglo de URLs
+    return data.urls;
   };
 
   const openCarousel = (images: string[], index: number) => {
@@ -208,7 +217,7 @@ export default function KanbanBoard() {
     setCarouselIndex(index);
   };
 
-  // Renderizador estilo WhatsApp para las miniaturas
+  // Renderizador estilo WhatsApp para las miniaturas en el tablero
   const renderWhatsAppGrid = (images: string[]) => {
     if (!images || images.length === 0) return null;
 
@@ -246,7 +255,6 @@ export default function KanbanBoard() {
       );
     }
 
-    // 3 o más fotos: Estilo WhatsApp (2 visibles, la segunda borrosa con contador +N)
     const visibleImages = images.slice(0, 2);
     const remainingCount = images.length - 2;
 
@@ -313,6 +321,35 @@ export default function KanbanBoard() {
       }
     } catch (error) {
       console.error("Error eliminando imagen de nota:", error);
+    }
+  };
+
+  // Subir fotos adicionales a una tarea ya existente
+  const handleUploadExtraImages = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeTask || extraTaskImageFiles.length === 0) return;
+
+    try {
+      setIsSubmittingExtraImages(true);
+      const uploadedUrls = await uploadImagesToBlob(extraTaskImageFiles);
+
+      const res = await fetch(`/api/tasks/${activeTask._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newImages: uploadedUrls }),
+      });
+
+      if (res.ok) {
+        const updated = await res.json();
+        setActiveTask(updated);
+        setExtraTaskImageFiles([]);
+        setExtraTaskImagePreviews([]);
+        loadTasks();
+      }
+    } catch (error) {
+      console.error("Error agregando imágenes a la tarea:", error);
+    } finally {
+      setIsSubmittingExtraImages(false);
     }
   };
 
@@ -513,6 +550,8 @@ export default function KanbanBoard() {
     setEditTitle(task.title);
     setEditType(task.type);
     setEditPriority(task.priority);
+    setExtraTaskImageFiles([]);
+    setExtraTaskImagePreviews([]);
     setIsEditing(false);
   };
 
@@ -614,7 +653,7 @@ export default function KanbanBoard() {
             )}
           </div>
 
-          {/* FORMULARIO DE TAREA CON SOPORTE MÚLTIPLE DE IMÁGENES */}
+          {/* FORMULARIO DE TAREA CON SOPORTE MÚLTIPLE */}
           <form onSubmit={handleAddTask} className="lg:col-span-8 flex flex-col gap-2 bg-neutral-900/50 p-3 rounded-2xl border border-neutral-800/80">
             <div className="flex flex-col sm:flex-row gap-2">
               <input
@@ -712,7 +751,7 @@ export default function KanbanBoard() {
               ) : (
                 <div className="flex items-center gap-2 text-[11px] text-neutral-400 w-full justify-center">
                   <Upload size={13} className="text-blue-400" />
-                  <span>Adjuntar imágenes (Puedes seleccionar varias, arrastrar, <strong>pegar con Ctrl+V</strong> o hacer clic)</span>
+                  <span>Adjuntar imágenes (Puedes seleccionar varias, arrastrar, <strong>pega con Ctrl+V</strong> o hacer clic)</span>
                 </div>
               )}
             </div>
@@ -785,12 +824,12 @@ export default function KanbanBoard() {
                                   </div>
 
                                   {/* RENDERIZADOR ESTILO WHATSAPP PARA LAS IMÁGENES */}
-                                  {renderWhatsAppGrid(task.images || [])}
+                                  {renderWhatsAppGrid(task?.images || [])}
 
                                   <div className="mt-4 pt-3 border-t border-neutral-800/60 flex items-center justify-between">
                                     <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-medium ${typeData.color}`}>
                                       <TypeIcon size={12} />
-                                      <span>{typeData.label}</span>
+                                      <span>{typeData?.label}</span>
                                     </div>
 
                                     <div className="flex items-center gap-2">
@@ -801,7 +840,7 @@ export default function KanbanBoard() {
                                       )}
                                       {task.assignedTo && (
                                         <span className="text-[11px] text-blue-400/90 font-medium bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
-                                          @{typeof task.assignedTo === 'object' ? task.assignedTo.name.split(' ')[0] : 'Dev'}
+                                          @{typeof task?.assignedTo === 'object' ? task?.assignedTo?.name?.split(' ')[0] : 'Dev'}
                                         </span>
                                       )}
                                     </div>
@@ -830,10 +869,10 @@ export default function KanbanBoard() {
             <div className="px-6 py-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-950/50">
               <div className="flex items-center gap-2">
                 <span className="text-xs uppercase tracking-wider font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                  {typeConfig[activeTask.type]?.label || 'Tarea'}
+                  {typeConfig[activeTask?.type]?.label || 'Tarea'}
                 </span>
                 <span className="text-xs text-neutral-400">
-                  Asignado a: <strong className="text-blue-300">@{typeof activeTask.assignedTo === 'object' ? activeTask.assignedTo?.name : 'Desconocido'}</strong>
+                  Asignado a: <strong className="text-blue-300">@{typeof activeTask?.assignedTo === 'object' ? activeTask?.assignedTo?.name : 'Desconocido'}</strong>
                 </span>
               </div>
               <button onClick={() => setActiveTask(null)} className="text-neutral-400 hover:text-white p-1 rounded-lg hover:bg-neutral-800">
@@ -844,7 +883,7 @@ export default function KanbanBoard() {
             <div className="p-6 overflow-y-auto space-y-6 flex-1">
               
               {/* GALERÍA DE IMÁGENES PRINCIPALES DE LA TAREA EN EL MODAL */}
-              {activeTask?.images && activeTask?.images?.length > 0 && (
+              {activeTask.images && activeTask.images.length > 0 && (
                 <div className="space-y-2">
                   <span className="text-[11px] text-neutral-400 font-medium">Imágenes adjuntas a la tarea:</span>
                   <div className="grid grid-cols-3 gap-2">
@@ -853,7 +892,7 @@ export default function KanbanBoard() {
                         <img 
                           src={imgUrl} 
                           alt="Referencia" 
-                          onClick={() => openCarousel(activeTask?.images || [], idx)}
+                          onClick={() => openCarousel(activeTask.images || [], idx)}
                           className="w-full h-full object-cover cursor-zoom-in hover:scale-105 transition-transform" 
                         />
                         <button
@@ -868,6 +907,79 @@ export default function KanbanBoard() {
                   </div>
                 </div>
               )}
+
+              {/* ZONA PARA AGREGAR MÁS FOTOS A UNA TAREA YA CREADA */}
+              <div className="bg-neutral-950/40 p-3.5 rounded-xl border border-neutral-800 space-y-2">
+                <span className="text-[11px] text-neutral-400 font-medium flex items-center gap-1.5">
+                  <ImagePlus size={14} className="text-blue-400" /> Agregar más fotos a esta tarea:
+                </span>
+                
+                <div 
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (e.dataTransfer.files) handleFilesSelected(e.dataTransfer.files, 'extra');
+                  }}
+                  onPaste={(e) => {
+                    const files = e.clipboardData.files;
+                    if (files && files.length > 0) handleFilesSelected(files, 'extra');
+                  }}
+                  className="border border-dashed border-neutral-800 hover:border-blue-500/40 rounded-xl px-3 py-2 text-center cursor-pointer bg-neutral-900/60 transition-colors flex flex-col gap-2"
+                  onClick={() => document.getElementById('extra-task-file-input')?.click()}
+                >
+                  <input 
+                    id="extra-task-file-input" 
+                    type="file" 
+                    accept="image/*" 
+                    multiple
+                    className="hidden" 
+                    onChange={(e) => {
+                      if (e.target.files) handleFilesSelected(e.target.files, 'extra');
+                    }} 
+                  />
+
+                  {extraTaskImagePreviews.length > 0 ? (
+                    <div className="flex items-center justify-between gap-2 w-full flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {extraTaskImagePreviews.map((preview, i) => (
+                          <img 
+                            key={i}
+                            src={preview} 
+                            alt="Extra Preview" 
+                            className="h-8 w-8 object-cover rounded-md border border-neutral-700" 
+                          />
+                        ))}
+                        <span className="text-[11px] text-emerald-400 font-medium">{extraTaskImagePreviews.length} seleccionadas</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          disabled={isSubmittingExtraImages}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            await handleUploadExtraImages(e);
+                          }}
+                          className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs px-3 py-1 rounded-lg font-medium transition-colors"
+                        >
+                          {isSubmittingExtraImages ? 'Subiendo...' : 'Subir fotos'}
+                        </button>
+                        <button 
+                          type="button" 
+                          onClick={(e) => { e.stopPropagation(); setExtraTaskImageFiles([]); setExtraTaskImagePreviews([]); }} 
+                          className="text-neutral-400 hover:text-red-400 text-xs px-2 py-1"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-[11px] text-neutral-400 w-full justify-center">
+                      <Upload size={12} className="text-blue-400" />
+                      <span>Arrastra, <strong>pega (Ctrl+V)</strong> o haz clic para añadir más fotos</span>
+                    </div>
+                  )}
+                </div>
+              </div>
 
               {session?.user?.role === 'admin' && (
                 <div className="bg-neutral-950/60 p-4 rounded-xl border border-neutral-800 space-y-4">
@@ -1121,7 +1233,6 @@ export default function KanbanBoard() {
           className="fixed inset-0 z-[70] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
           onClick={() => setCarouselImages([])}
         >
-          {/* Barra superior (Contador y Botón Cerrar) */}
           <div className="absolute top-6 left-6 right-6 flex justify-between items-center z-20">
             <span className="text-xs font-mono bg-neutral-900/80 border border-neutral-700 px-3 py-1.5 rounded-full text-neutral-300 shadow-xl">
               {carouselIndex + 1} / {carouselImages.length}
@@ -1134,7 +1245,6 @@ export default function KanbanBoard() {
             </button>
           </div>
 
-          {/* Flecha Izquierda */}
           {carouselImages.length > 1 && (
             <button
               onClick={(e) => { e.stopPropagation(); setCarouselIndex((prev) => (prev === 0 ? carouselImages.length - 1 : prev - 1)); }}
@@ -1144,7 +1254,6 @@ export default function KanbanBoard() {
             </button>
           )}
 
-          {/* Imagen Actual del Carrusel */}
           <div className="relative max-w-6xl max-h-[85vh] w-full h-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
             <img 
               src={carouselImages[carouselIndex]} 
@@ -1153,7 +1262,6 @@ export default function KanbanBoard() {
             />
           </div>
 
-          {/* Flecha Derecha */}
           {carouselImages.length > 1 && (
             <button
               onClick={(e) => { e.stopPropagation(); setCarouselIndex((prev) => (prev === carouselImages.length - 1 ? 0 : prev + 1)); }}
