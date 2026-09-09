@@ -35,7 +35,7 @@ export default function KanbanBoard() {
   const userIdParam = searchParams.get('userId');
   const devParam = searchParams.get('dev');
 
-  const { columns, setTasksFromDB, optimisticMove, optimisticAdd, optimisticDelete } = useTaskStore();
+  const { columns, setTasksFromDB, optimisticAdd, optimisticDelete } = useTaskStore();
   
   const [isMounted, setIsMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -106,7 +106,7 @@ export default function KanbanBoard() {
       return matchSearch && matchUser;
     }),
   };
-  const isSearching = searchTerm.trim().length > 0 || selectedUserFilter !== 'my';
+  const isSearching = searchTerm.trim().length > 0 || selectedUserFilter === 'all';
 
   useEffect(() => {
     setIsMounted(true);
@@ -149,18 +149,59 @@ export default function KanbanBoard() {
     const { source, destination } = result;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
 
-    optimisticMove(
-      source.droppableId as keyof typeof columns,
-      destination.droppableId as keyof typeof columns,
-      source.index,
-      destination.index
-    );
+    if (selectedUserFilter === 'all' || isSearching) return;
 
-    const freshColumns = useTaskStore.getState().columns;
-    const destColumn = freshColumns[destination.droppableId as keyof typeof columns];
-    const reorderedItems = destColumn.map((task, index) => ({
+    const sourceColId = source.droppableId as keyof typeof columns;
+    const destColId = destination.droppableId as keyof typeof columns;
+    const activeUserId = selectedUserFilter === 'my' ? session?.user?.id : selectedUserFilter;
+
+    // 1. Obtener copias de las listas filtradas actuales
+    const sourceFiltered = [...filteredColumns[sourceColId]];
+    const destFiltered = sourceColId === destColId ? sourceFiltered : [...filteredColumns[destColId]];
+
+    // 2. Mover la tarjeta en el array filtrado
+    const [movedItem] = sourceFiltered.splice(source.index, 1);
+    movedItem.status = destColId;
+    destFiltered.splice(destination.index, 0, movedItem);
+
+    // 3. Reconstruir el estado global en el store preservando las tareas de los demás usuarios
+    const currentColumns = useTaskStore.getState().columns;
+    const newColumns = { ...currentColumns };
+
+    const affectedColIds = Array.from(new Set([sourceColId, destColId]));
+    affectedColIds.forEach((colId) => {
+      const globalColTasks = currentColumns[colId];
+      let activeUserIndex = 0;
+      
+      const updatedGlobalCol = globalColTasks.map(task => {
+        const taskUserId = task.assignedTo?._id || task.createdBy?._id;
+        if (taskUserId === activeUserId) {
+          const targetList = (sourceColId === destColId && colId === destColId) 
+            ? destFiltered 
+            : (colId === sourceColId ? sourceFiltered : destFiltered);
+          
+          const replacement = targetList[activeUserIndex];
+          activeUserIndex++;
+          return replacement || task;
+        }
+        return task;
+      });
+
+      newColumns[colId] = updatedGlobalCol;
+    });
+
+    // Actualizar store local instantáneamente
+    useTaskStore.setState({ columns: newColumns });
+
+    // 4. Preparar y enviar los datos SOLO de este usuario al backend
+    const finalDestTasks = newColumns[destColId].filter(t => {
+      const taskUserId = t.assignedTo?._id || t.createdBy?._id;
+      return taskUserId === activeUserId;
+    });
+
+    const reorderedItems = finalDestTasks.map((task, index) => ({
       _id: task._id,
-      status: destination.droppableId,
+      status: destColId,
       order: index
     }));
 
@@ -496,7 +537,12 @@ export default function KanbanBoard() {
                           const priorityData = priorityConfig[task.priority];
 
                           return (
-                            <Draggable key={task._id} draggableId={task._id} index={index}>
+                            <Draggable 
+                              key={task._id} 
+                              draggableId={task._id} 
+                              index={index}
+                              isDragDisabled={selectedUserFilter === 'all'}
+                            >
                               {(provided, snapshot) => (
                                 <div
                                   ref={provided.innerRef}
