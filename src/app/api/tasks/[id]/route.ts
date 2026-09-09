@@ -12,7 +12,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     const { id } = await params;
     const body = await req.json();
-    const { status, newNote, assignedTo, priority, title, type } = body;
+    const { status, newNote, deleteNoteId, assignedTo, priority, title, type } = body;
 
     await connectDB();
     const task = await Task.findById(id);
@@ -21,29 +21,50 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ message: "Tarea no encontrada" }, { status: 404 });
     }
 
-    // SEGURIDAD: Un usuario normal solo puede editar tareas si le pertenecen
+    // Si la acción es eliminar una nota específica
+    if (deleteNoteId) {
+      const noteObj = task.notes.id(deleteNoteId);
+      if (!noteObj) return NextResponse.json({ message: "Nota no encontrada" }, { status: 404 });
+
+      const isNoteAuthor = noteObj.author?.toString() === session.user.id;
+      if (session.user.role !== "admin" && !isNoteAuthor) {
+        return NextResponse.json({ message: "No autorizado para eliminar esta nota" }, { status: 403 });
+      }
+
+      const updatedTask = await Task.findByIdAndUpdate(
+        id,
+        { 
+          $pull: { notes: { _id: deleteNoteId } },
+          $set: { lastModifiedBy: session.user.id }
+        },
+        { new: true }
+      )
+      .populate("assignedTo", "name email")
+      .populate("lastModifiedBy", "name email")
+      .populate("notes.author", "name email");
+
+      return NextResponse.json(updatedTask);
+    }
+
     const isAssigned = task.assignedTo?.toString() === session.user.id;
     const isCreator = task.createdBy?.toString() === session.user.id;
     
-    if (session.user.role !== "admin" && !isAssigned && !isCreator) {
-      return NextResponse.json({ message: "No tienes permiso para editar esta tarea" }, { status: 403 });
+    if (session.user.role !== "admin" && !isAssigned && !isCreator && !newNote) {
+      return NextResponse.json({ message: "No tienes permiso para editar" }, { status: 403 });
     }
 
-    // Preparamos los datos a actualizar
-    const updateData: any = {
-      lastModifiedBy: session.user.id
+    const updateOps: any = {
+      $set: { lastModifiedBy: session.user.id }
     };
 
-    // Si el front envía un nuevo estado (ej. la arrastró a "En Progreso")
-    if (status) updateData.status = status;
-    if (priority) updateData.priority = priority;
-    if (title) updateData.title = title;       // <-- Añadir
-    if (type) updateData.type = type;         // <-- Añadir
-    if (assignedTo !== undefined) updateData.assignedTo = assignedTo;
+    if (status) updateOps.$set.status = status;
+    if (priority) updateOps.$set.priority = priority;
+    if (title && session.user.role === "admin") updateOps.$set.title = title;
+    if (type && session.user.role === "admin") updateOps.$set.type = type;
+    if (assignedTo !== undefined) updateOps.$set.assignedTo = assignedTo;
 
-    // Si el front envía una nueva nota
     if (newNote) {
-      updateData.$push = {
+      updateOps.$push = {
         notes: {
           text: newNote,
           author: session.user.id,
@@ -52,17 +73,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       };
     }
 
-    const updatedTask = await Task.findByIdAndUpdate(
-      id,
-      updateData.notes ? { $set: updateData, $push: updateData.$push } : { $set: updateData },
-      { new: true }
-    )
-    .populate("assignedTo", "name")
-    .populate("lastModifiedBy", "name")
-    .populate("notes.author", "name");
+    const updatedTask = await Task.findByIdAndUpdate(id, updateOps, { new: true })
+      .populate("assignedTo", "name email")
+      .populate("lastModifiedBy", "name email")
+      .populate("notes.author", "name email");
 
     return NextResponse.json(updatedTask);
   } catch (error) {
+    console.error("Error al actualizar tarea:", error);
     return NextResponse.json({ message: "Error al actualizar tarea" }, { status: 500 });
   }
 }
@@ -72,7 +90,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   try {
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== "admin") {
-      return NextResponse.json({ message: "Solo los administradores pueden borrar tareas" }, { status: 403 });
+      return NextResponse.json({ message: "Solo administradores" }, { status: 403 });
     }
 
     const { id } = await params;
