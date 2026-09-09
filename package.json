@@ -13,6 +13,7 @@
     "@vercel/blob": "^2.8.0",
     "bcryptjs": "^3.0.3",
     "date-fns": "^4.4.0",
+    "emoji-picker-react": "^4.20.2",
     "lucide-react": "^1.43.0",
     "mongoose": "^9.9.5",
     "next": "16.3.4",

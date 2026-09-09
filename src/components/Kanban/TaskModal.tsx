@@ -1,16 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Task, TaskType, TaskPriority } from '@/store/useTaskStore';
-import { X, Trash2, ImagePlus, Upload, Shield, Edit3, Send, MessageSquare } from 'lucide-react';
+import { X, Trash2, ImagePlus, Upload, Shield, Edit3, Send, MessageSquare, Smile } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm'; // PLUGIN PARA LINKS AUTOMÁTICOS EN NOTAS
+import remarkGfm from 'remark-gfm';
 import { toast } from 'sonner';
 import { compressImage } from '@/lib/compressImage';
+import EmojiPicker, { Theme } from 'emoji-picker-react';
 
 interface TaskModalProps {
   task: Task;
   session: any;
   systemUsers: any[];
-  typeConfig: any;
+  typeConfig: Record<TaskType, { label: string; color: string; icon: React.ElementType }>;
   onClose: () => void;
   onTaskUpdated: (updatedTask: Task) => void;
   onOpenCarousel: (images: string[], index: number) => void;
@@ -40,15 +41,21 @@ export default function TaskModal({
   const [notePreviews, setNotePreviews] = useState<string[]>([]);
   const [isSubmittingNote, setIsSubmittingNote] = useState(false);
 
-  // FUNCIÓN PARA LINKS EN EL TÍTULO
-  const renderTextWithLinks = (text: string) => {
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
-    return text.split(urlRegex).map((part, i) => {
-      if (part.match(urlRegex)) {
-        return <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline break-all" onClick={(e) => e.stopPropagation()}>{part}</a>;
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+        setShowEmojiPicker(false);
       }
-      return part;
-    });
+    };
+    if (showEmojiPicker) window.addEventListener('mousedown', handleClickOutside);
+    return () => window.removeEventListener('mousedown', handleClickOutside);
+  }, [showEmojiPicker]);
+
+  const onEmojiClick = (emojiObject: any) => {
+    setNewNoteText(prev => prev + emojiObject.emoji);
   };
 
   const uploadImagesToBlob = async (files: File[]): Promise<string[]> => {
@@ -99,7 +106,6 @@ export default function TaskModal({
     }
   };
 
-  // NUEVO FLUJO DE TRANSFERENCIA (Reemplaza al `confirm()` nativo)
   const handleTransferTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!transferTargetId) return;
@@ -152,8 +158,8 @@ export default function TaskModal({
     }
   };
 
-  const handleAddNote = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAddNote = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!newNoteText.trim() && noteFiles.length === 0) return;
 
     try {
@@ -175,6 +181,7 @@ export default function TaskModal({
         setNewNoteText('');
         setNoteFiles([]);
         setNotePreviews([]);
+        setShowEmojiPicker(false);
         toast.success("Nota añadida");
       }
     } catch (error) {
@@ -270,8 +277,13 @@ export default function TaskModal({
               {isEditing && (
                 <form onSubmit={handleSaveEdit} className="space-y-3 pt-3 border-t border-neutral-800">
                   <div>
-                    <label className="text-[11px] text-neutral-400 block mb-1">Título de la Tarea</label>
-                    <input type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" />
+                    <label className="text-[11px] text-neutral-400 block mb-1">Descripción de la Tarea</label>
+                    <textarea 
+                      rows={4}
+                      value={editTitle} 
+                      onChange={(e) => setEditTitle(e.target.value)} 
+                      className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" 
+                    />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -304,10 +316,35 @@ export default function TaskModal({
             </div>
           )}
 
-          {/* TÍTULO RENDERIZADO CON LINKS (SOLO LECTURA) */}
+          {/* TÍTULO RENDERIZADO CON MARKDOWN (SOPORTA CÓDIGO) */}
           {!isEditing && (
             <div>
-              <h2 className="text-xl font-bold text-white mb-2 break-words">{renderTextWithLinks(task.title)}</h2>
+              <div className="text-xl font-bold text-white mb-2 break-words">
+                <ReactMarkdown 
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    code({node, inline, className, children, ...props}: any) {
+                      return !inline ? (
+                        <pre className="bg-[#0d0d0d] border border-neutral-800 p-3 rounded-lg overflow-x-auto my-2 text-sm font-mono text-neutral-300 font-normal">
+                          <code {...props}>{children}</code>
+                        </pre>
+                      ) : (
+                        <code className="bg-neutral-800 text-blue-300 px-1.5 py-0.5 rounded-md text-[13px] font-mono font-normal" {...props}>
+                          {children}
+                        </code>
+                      )
+                    },
+                    a({node, ...props}: any) {
+                      return <a {...props} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline break-all" onClick={(e) => e.stopPropagation()} />
+                    },
+                    p({node, ...props}: any) {
+                      return <p {...props} className="mb-2 last:mb-0" />
+                    }
+                  }}
+                >
+                  {task.title}
+                </ReactMarkdown>
+              </div>
               <div className="flex gap-2 text-xs text-neutral-400">
                 <span>Prioridad: <strong className="text-neutral-200 capitalize">{task.priority}</strong></span>
                 <span>•</span>
@@ -344,7 +381,7 @@ export default function TaskModal({
                       
                       <div className="text-sm text-neutral-300 whitespace-pre-wrap break-words">
                         <ReactMarkdown 
-                          remarkPlugins={[remarkGfm]} // <-- ACTIVADO EL SOPORTE PARA LINKS AUTOMÁTICOS
+                          remarkPlugins={[remarkGfm]}
                           components={{
                             code({node, inline, className, children, ...props}: any) {
                               return !inline ? (
@@ -357,7 +394,6 @@ export default function TaskModal({
                                 </code>
                               )
                             },
-                            // RENDERIZADO PERSONALIZADO DE ENLACES PARA ABRIR EN PESTAÑA NUEVA
                             a({node, ...props}: any) {
                               return <a {...props} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline break-all" onClick={(e) => e.stopPropagation()} />
                             }
@@ -387,18 +423,41 @@ export default function TaskModal({
               )}
             </div>
 
-            <form onSubmit={handleAddNote} className="flex flex-col gap-2 pt-2">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Escribe una nota, añade links, emojis 🔥 o código entre ``` ... ```"
-                  value={newNoteText}
-                  onChange={(e) => setNewNoteText(e.target.value)}
-                  onPaste={(e) => { const files = e.clipboardData.files; if (files && files.length > 0) handleFilesSelected(files, 'note'); }}
-                  className="flex-1 bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-neutral-500 focus:outline-none focus:border-blue-500"
-                />
-                <button type="submit" disabled={isSubmittingNote} className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 text-sm font-medium">
-                  <Send size={15} /> {isSubmittingNote ? 'Enviando...' : 'Enviar'}
+            <form onSubmit={handleAddNote} className="flex flex-col gap-2 pt-2 relative">
+              <div className="flex gap-2 relative">
+                
+                <div className="flex-1 bg-neutral-950 border border-neutral-800 rounded-xl flex items-start focus-within:border-blue-500/50 transition-colors">
+                  <textarea
+                    rows={1}
+                    placeholder="Escribe una nota o usa ``` para código..."
+                    value={newNoteText}
+                    onChange={(e) => setNewNoteText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleAddNote();
+                      }
+                    }}
+                    onPaste={(e) => { const files = e.clipboardData.files; if (files && files.length > 0) handleFilesSelected(files, 'note'); }}
+                    className="bg-transparent px-4 py-2.5 text-sm text-white placeholder:text-neutral-500 focus:outline-none flex-1 resize-y min-h-[40px] max-h-[150px]"
+                  />
+                  <button 
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(!showEmojiPicker); }}
+                    className="p-2.5 text-neutral-500 hover:text-amber-400 transition-colors"
+                  >
+                    <Smile size="{18}"/>
+                  </button>
+                </div>
+
+                {showEmojiPicker && (
+                  <div ref={emojiPickerRef} className="absolute z-50 bottom-14 right-0 shadow-2xl">
+                    <EmojiPicker autoFocusSearch={false} onEmojiClick={onEmojiClick} theme={Theme.DARK}/>
+                  </div>
+                )}
+
+                <button type="submit" disabled={isSubmittingNote} className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 rounded-xl transition-colors flex items-center gap-1.5 text-sm font-medium">
+                  <Send size="{15}"/> {isSubmittingNote ? '...' : 'Enviar'}
                 </button>
               </div>
 
@@ -418,7 +477,7 @@ export default function TaskModal({
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 text-[11px] text-neutral-400 justify-center">
-                    <Upload size={13} className="text-blue-400" /> <span>Adjuntar imágenes en la nota (Arrastra o <strong>pega con Ctrl+V</strong>)</span>
+                    <Upload className="text-blue-400" size="{13}"/> <span>Adjuntar imágenes en la nota (Arrastra o <strong>pega con Ctrl+V</strong>)</span>
                   </div>
                 )}
               </div>

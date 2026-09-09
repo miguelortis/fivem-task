@@ -2,6 +2,8 @@ import React from 'react';
 import { Draggable } from '@hello-pangea/dnd';
 import { Trash2, MessageSquare, Maximize2, SlidersHorizontal, Clock, Layers, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Task, TaskType, TaskPriority } from '@/store/useTaskStore';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface TaskCardProps {
   task: Task;
@@ -27,28 +29,6 @@ export default function TaskCard({
   const typeData = typeConfig[task.type];
   const TypeIcon = typeData.icon;
   const priorityData = priorityConfig[task.priority];
-
-  // FUNCIÓN PARA RENDERIZAR LINKS EN EL TÍTULO
-  const renderTextWithLinks = (text: string) => {
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
-    return text.split(urlRegex).map((part, i) => {
-      if (part.match(urlRegex)) {
-        return (
-          <a 
-            key={i} 
-            href={part} 
-            target="_blank" 
-            rel="noopener noreferrer" 
-            className="text-blue-400 hover:underline break-all"
-            onClick={(e) => e.stopPropagation()} // Evita que se abra el modal de la tarea al hacer clic en el link
-          >
-            {part}
-          </a>
-        );
-      }
-      return part;
-    });
-  };
 
   const renderWhatsAppGrid = (images: string[]) => {
     if (!images || images.length === 0) return null;
@@ -119,9 +99,34 @@ export default function TaskCard({
           }`}
         >
           <div className="flex justify-between items-start gap-3">
-            <p className="text-sm font-medium text-neutral-100 leading-relaxed pr-6 break-words">
-              {renderTextWithLinks(task.title)}
-            </p>
+            
+            {/* RENDERIZADO MARKDOWN DE LA TAREA (SOPORTA CÓDIGO) */}
+            <div className="text-sm font-medium text-neutral-100 leading-relaxed pr-6 break-words overflow-hidden max-h-32 mask-image-bottom w-full">
+              <ReactMarkdown 
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  code({node, inline, className, children, ...props}: any) {
+                    return !inline ? (
+                      <pre className="bg-[#0d0d0d] border border-neutral-800 p-2 rounded-lg overflow-x-auto mt-1 mb-2 text-[10px] font-mono text-neutral-300">
+                        <code {...props}>{children}</code>
+                      </pre>
+                    ) : (
+                      <code className="bg-neutral-800 text-blue-300 px-1 py-0.5 rounded text-[10px] font-mono" {...props}>
+                        {children}
+                      </code>
+                    )
+                  },
+                  a({node, ...props}: any) {
+                    return <a {...props} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline break-all" onClick={(e) => e.stopPropagation()} />
+                  },
+                  p({node, ...props}: any) {
+                    return <p {...props} className="mb-1 last:mb-0" />
+                  }
+                }}
+              >
+                {task.title}
+              </ReactMarkdown>
+            </div>
             
             <div className="absolute top-3 right-3 flex items-center gap-1">
               <div className="relative">
@@ -164,6 +169,7 @@ export default function TaskCard({
                 )}
               </div>
             </div>
+
           </div>
 
           {renderWhatsAppGrid(task.images || [])}
