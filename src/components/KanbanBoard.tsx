@@ -5,7 +5,7 @@ import { useSession, signOut } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { useTaskStore, Task, TaskType, TaskPriority } from '@/store/useTaskStore';
-import { Bug, Cpu, Wrench, Zap, Search, Plus, Trash2, LogOut, Shield, Layers, CheckCircle2, Clock, MessageSquare, X, Edit3, Send, UserCheck, Upload, Maximize2, ChevronLeft, ChevronRight, ImagePlus } from 'lucide-react';
+import { Bug, Cpu, Wrench, Zap, Search, Plus, Trash2, LogOut, Shield, Layers, CheckCircle2, Clock, MessageSquare, X, Edit3, Send, UserCheck, Upload, Maximize2, ChevronLeft, ChevronRight, ImagePlus, SlidersHorizontal, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { compressImage } from '@/lib/compressImage';
 
@@ -47,24 +47,23 @@ export default function KanbanBoard() {
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>('medium');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Estados para múltiples imágenes en creación
+  // Estados para múltiples imágenes
   const [taskImageFiles, setTaskImageFiles] = useState<File[]>([]);
   const [taskImagePreviews, setTaskImagePreviews] = useState<string[]>([]);
   const [isSubmittingTask, setIsSubmittingTask] = useState(false);
 
-  // Estados para múltiples imágenes en notas
   const [noteImageFiles, setNoteImageFiles] = useState<File[]>([]);
   const [noteImagePreviews, setNoteImagePreviews] = useState<string[]>([]);
   const [isSubmittingNote, setIsSubmittingNote] = useState(false);
 
-  // Estados para agregar más imágenes a una tarea existente desde el modal
   const [extraTaskImageFiles, setExtraTaskImageFiles] = useState<File[]>([]);
   const [extraTaskImagePreviews, setExtraTaskImagePreviews] = useState<string[]>([]);
   const [isSubmittingExtraImages, setIsSubmittingExtraImages] = useState(false);
 
-  // Estados para el carrusel
+  // Estados para el carrusel y menú rápido de tarjeta
   const [carouselImages, setCarouselImages] = useState<string[]>([]);
   const [carouselIndex, setCarouselIndex] = useState(0);
+  const [openCardMenuId, setOpenCardMenuId] = useState<string | null>(null);
 
   const [systemUsers, setSystemUsers] = useState<Array<{ _id: string; name: string; email: string }>>([]);
   const [transferTargetId, setTransferTargetId] = useState('');
@@ -174,7 +173,6 @@ export default function KanbanBoard() {
   const isSearching = searchTerm.trim().length > 0;
   const isDragDisabled = selectedUserFilter === 'all' || isSearching;
 
-  // Procesar archivos de imagen genéricos
   const handleFilesSelected = async (files: FileList | File[], target: 'task' | 'note' | 'extra') => {
     const validFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
     if (validFiles.length === 0) return;
@@ -217,7 +215,25 @@ export default function KanbanBoard() {
     setCarouselIndex(index);
   };
 
-  // Renderizador estilo WhatsApp para las miniaturas en el tablero
+  // Función para actualización rápida de estado o prioridad desde la tarjeta
+  const handleQuickUpdate = async (taskId: string, updates: { status?: string; priority?: string }, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setOpenCardMenuId(null);
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+
+      if (res.ok) {
+        loadTasks();
+      }
+    } catch (error) {
+      console.error("Error en actualización rápida:", error);
+    }
+  };
+
   const renderWhatsAppGrid = (images: string[]) => {
     if (!images || images.length === 0) return null;
 
@@ -324,7 +340,6 @@ export default function KanbanBoard() {
     }
   };
 
-  // Subir fotos adicionales a una tarea ya existente
   const handleUploadExtraImages = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeTask || extraTaskImageFiles.length === 0) return;
@@ -653,7 +668,7 @@ export default function KanbanBoard() {
             )}
           </div>
 
-          {/* FORMULARIO DE TAREA CON SOPORTE MÚLTIPLE */}
+          {/* FORMULARIO DE TAREA */}
           <form onSubmit={handleAddTask} className="lg:col-span-8 flex flex-col gap-2 bg-neutral-900/50 p-3 rounded-2xl border border-neutral-800/80">
             <div className="flex flex-col sm:flex-row gap-2">
               <input
@@ -701,7 +716,6 @@ export default function KanbanBoard() {
               </div>
             </div>
 
-            {/* ZONA DE MÚLTIPLES IMÁGENES */}
             <div 
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
@@ -810,26 +824,82 @@ export default function KanbanBoard() {
                                   }`}
                                 >
                                   <div className="flex justify-between items-start gap-3">
-                                    <p className="text-sm font-medium text-neutral-100 leading-relaxed">{task.title}</p>
+                                    <p className="text-sm font-medium text-neutral-100 leading-relaxed pr-6">{task.title}</p>
                                     
-                                    {session?.user?.role === 'admin' && (
-                                      <button
-                                        onClick={(e) => handleDeleteTask(colId, task._id, e)}
-                                        className="text-neutral-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 shrink-0"
-                                        title="Eliminar tarea"
-                                      >
-                                        <Trash2 size={14} />
-                                      </button>
-                                    )}
+                                    {/* MENÚ RÁPIDO EN LA TARJETA (ESTADO Y PRIORIDAD) */}
+                                    <div className="absolute top-3 right-3 flex items-center gap-1">
+                                      <div className="relative">
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setOpenCardMenuId(openCardMenuId === task._id ? null : task._id);
+                                          }}
+                                          className="text-neutral-400 hover:text-white p-1 rounded-lg bg-neutral-800/60 hover:bg-neutral-700 transition-colors"
+                                          title="Cambio rápido de estado / prioridad"
+                                        >
+                                          <SlidersHorizontal size={13} />
+                                        </button>
+
+                                        {openCardMenuId === task._id && (
+                                          <div 
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="absolute right-0 top-7 w-48 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl p-2 z-40 space-y-2 text-xs"
+                                          >
+                                            <div>
+                                              <span className="text-[10px] uppercase font-mono text-neutral-500 px-2 block mb-1">Mover a columna</span>
+                                              <div className="space-y-0.5">
+                                                {colId !== 'todo' && (
+                                                  <button onClick={(e) => handleQuickUpdate(task._id, { status: 'todo' }, e)} className="w-full text-left px-2 py-1 rounded hover:bg-neutral-800 text-amber-400 flex items-center gap-1.5">
+                                                    <Clock size={12} /> Por Hacer
+                                                  </button>
+                                                )}
+                                                {colId !== 'inProgress' && (
+                                                  <button onClick={(e) => handleQuickUpdate(task._id, { status: 'inProgress' }, e)} className="w-full text-left px-2 py-1 rounded hover:bg-neutral-800 text-blue-400 flex items-center gap-1.5">
+                                                    <Layers size={12} /> En Progreso
+                                                  </button>
+                                                )}
+                                                {colId !== 'done' && (
+                                                  <button onClick={(e) => handleQuickUpdate(task._id, { status: 'done' }, e)} className="w-full text-left px-2 py-1 rounded hover:bg-neutral-800 text-emerald-400 flex items-center gap-1.5">
+                                                    <CheckCircle2 size={12} /> Listas
+                                                  </button>
+                                                )}
+                                              </div>
+                                            </div>
+
+                                            <div className="border-t border-neutral-800 pt-1.5">
+                                              <span className="text-[10px] uppercase font-mono text-neutral-500 px-2 block mb-1">Cambiar prioridad</span>
+                                              <div className="grid grid-cols-2 gap-1">
+                                                <button onClick={(e) => handleQuickUpdate(task._id, { priority: 'low' }, e)} className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-center text-[10px] text-neutral-400">Baja</button>
+                                                <button onClick={(e) => handleQuickUpdate(task._id, { priority: 'medium' }, e)} className="px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-center text-[10px] text-neutral-300">Media</button>
+                                                <button onClick={(e) => handleQuickUpdate(task._id, { priority: 'high' }, e)} className="px-2 py-1 rounded bg-orange-500/10 hover:bg-orange-500/20 text-center text-[10px] text-orange-400">Alta</button>
+                                                <button onClick={(e) => handleQuickUpdate(task._id, { priority: 'critical' }, e)} className="px-2 py-1 rounded bg-red-500/20 hover:bg-red-500/30 text-center text-[10px] font-bold text-red-400 flex items-center justify-center gap-0.5">
+                                                  <AlertCircle size={10} /> Crítico
+                                                </button>
+                                              </div>
+                                            </div>
+
+                                            {session?.user?.role === 'admin' && (
+                                              <div className="border-t border-neutral-800 pt-1.5">
+                                                <button 
+                                                  onClick={(e) => handleDeleteTask(colId, task._id, e)} 
+                                                  className="w-full text-left px-2 py-1 rounded hover:bg-red-500/10 text-red-400 flex items-center gap-1.5"
+                                                >
+                                                  <Trash2 size={12} /> Eliminar tarea
+                                                </button>
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
                                   </div>
 
-                                  {/* RENDERIZADOR ESTILO WHATSAPP PARA LAS IMÁGENES */}
-                                  {renderWhatsAppGrid(task?.images || [])}
+                                  {renderWhatsAppGrid(task.images || [])}
 
                                   <div className="mt-4 pt-3 border-t border-neutral-800/60 flex items-center justify-between">
                                     <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-medium ${typeData.color}`}>
                                       <TypeIcon size={12} />
-                                      <span>{typeData?.label}</span>
+                                      <span>{typeData.label}</span>
                                     </div>
 
                                     <div className="flex items-center gap-2">
@@ -840,7 +910,7 @@ export default function KanbanBoard() {
                                       )}
                                       {task.assignedTo && (
                                         <span className="text-[11px] text-blue-400/90 font-medium bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
-                                          @{typeof task?.assignedTo === 'object' ? task?.assignedTo?.name?.split(' ')[0] : 'Dev'}
+                                          @{typeof task.assignedTo === 'object' ? task.assignedTo.name.split(' ')[0] : 'Dev'}
                                         </span>
                                       )}
                                     </div>
@@ -869,10 +939,10 @@ export default function KanbanBoard() {
             <div className="px-6 py-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-950/50">
               <div className="flex items-center gap-2">
                 <span className="text-xs uppercase tracking-wider font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                  {typeConfig[activeTask?.type]?.label || 'Tarea'}
+                  {typeConfig[activeTask.type]?.label || 'Tarea'}
                 </span>
                 <span className="text-xs text-neutral-400">
-                  Asignado a: <strong className="text-blue-300">@{typeof activeTask?.assignedTo === 'object' ? activeTask?.assignedTo?.name : 'Desconocido'}</strong>
+                  Asignado a: <strong className="text-blue-300">@{typeof activeTask.assignedTo === 'object' ? activeTask.assignedTo?.name : 'Desconocido'}</strong>
                 </span>
               </div>
               <button onClick={() => setActiveTask(null)} className="text-neutral-400 hover:text-white p-1 rounded-lg hover:bg-neutral-800">
@@ -882,7 +952,6 @@ export default function KanbanBoard() {
 
             <div className="p-6 overflow-y-auto space-y-6 flex-1">
               
-              {/* GALERÍA DE IMÁGENES PRINCIPALES DE LA TAREA EN EL MODAL */}
               {activeTask.images && activeTask.images.length > 0 && (
                 <div className="space-y-2">
                   <span className="text-[11px] text-neutral-400 font-medium">Imágenes adjuntas a la tarea:</span>
@@ -1041,7 +1110,6 @@ export default function KanbanBoard() {
                     </form>
                   )}
 
-                  {/* Sección de Transferencia de Tarea */}
                   <div className="pt-3 border-t border-neutral-800">
                     <span className="text-[11px] text-neutral-400 block mb-2 font-medium">Transferir Tarea a otro Desarrollador</span>
                     <form onSubmit={handleTransferTask} className="flex gap-2">
@@ -1080,7 +1148,6 @@ export default function KanbanBoard() {
                 </div>
               )}
 
-              {/* SECCIÓN DE NOTAS Y BITÁCORA */}
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold text-neutral-300 flex items-center gap-2">
                   <MessageSquare size={16} className="text-blue-400" /> Notas y Bitácora de Actividad
@@ -1112,7 +1179,6 @@ export default function KanbanBoard() {
                           
                           <p className="text-sm text-neutral-300 whitespace-pre-wrap">{note.text}</p>
 
-                          {/* IMÁGENES ADJUNTAS EN LA NOTA */}
                           {note.images && note.images.length > 0 && (
                             <div className="mt-2 grid grid-cols-3 gap-2">
                               {note.images.map((imgUrl: string, imgIdx: number) => (
@@ -1142,7 +1208,6 @@ export default function KanbanBoard() {
                   )}
                 </div>
 
-                {/* FORMULARIO DE NOTAS CON SOPORTE MÚLTIPLE */}
                 <form onSubmit={handleAddNote} className="flex flex-col gap-2 pt-2">
                   <div className="flex gap-2">
                     <input
@@ -1165,7 +1230,6 @@ export default function KanbanBoard() {
                     </button>
                   </div>
 
-                  {/* ZONA DE MÚLTIPLES IMÁGENES EN NOTA */}
                   <div 
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => {
